@@ -1,7 +1,10 @@
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
+import 'package:otp/otp.dart';
 
 void main() {
   runApp(const SocialMediaManagerApp());
@@ -38,7 +41,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('social_media_manager.db');
+    _database = await _initDB('social_media_manager_v2.db'); // Menggunakan DB baru
     return _database!;
   }
 
@@ -54,8 +57,7 @@ class DatabaseHelper {
       CREATE TABLE accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        username TEXT NOT NULL,
-        email TEXT NOT NULL,
+        identifier TEXT NOT NULL,
         password TEXT NOT NULL,
         a2f INTEGER NOT NULL,
         secret_key TEXT
@@ -77,8 +79,8 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.query(
       'accounts',
-      where: 'name LIKE ? OR username LIKE ? OR email LIKE ?',
-      whereArgs: ['%$query%', '%$query%', '%$query%'],
+      where: 'name LIKE ? OR identifier LIKE ?',
+      whereArgs: ['%$query%', '%$query%'],
       orderBy: 'id DESC',
     );
   }
@@ -109,9 +111,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _refreshAccounts() async {
     final data = await DatabaseHelper.instance.fetchAllAccounts();
-    setState(() {
-      _accounts = data;
-    });
+    if (mounted) {
+      setState(() {
+        _accounts = data;
+      });
+    }
   }
 
   Future<void> _searchAccounts(String query) async {
@@ -120,9 +124,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
     final data = await DatabaseHelper.instance.searchAccounts(query);
-    setState(() {
-      _accounts = data;
-    });
+    if (mounted) {
+      setState(() {
+        _accounts = data;
+      });
+    }
   }
 
   IconData _getPlatformIcon(String name) {
@@ -156,7 +162,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 24),
               
-              // Search Bar
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -179,7 +184,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const SizedBox(height: 24),
 
-              // List of Accounts
               Expanded(
                 child: _accounts.isEmpty
                     ? const Center(
@@ -194,40 +198,45 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           final acc = _accounts[index];
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 16.0),
-                            child: GlassCard(
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                leading: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF6C4DFF).withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Icon(_getPlatformIcon(acc['name']), color: const Color(0xFF6C4DFF)),
-                                ),
-                                title: Text(acc['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
-                                subtitle: Text(acc['username'], style: const TextStyle(color: Colors.black54, fontSize: 13)),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (acc['a2f'] == 1)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        margin: const EdgeInsets.only(right: 12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Text('A2F', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
-                                      ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                      onPressed: () async {
-                                        await DatabaseHelper.instance.deleteAccount(acc['id']);
-                                        _refreshAccounts();
-                                      },
+                            child: GestureDetector(
+                              onTap: () async {
+                                final result = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => AccountDetailScreen(account: acc)),
+                                );
+                                if (result == true) {
+                                  _refreshAccounts();
+                                }
+                              },
+                              child: GlassCard(
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  leading: Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF6C4DFF).withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
-                                  ],
+                                    child: Icon(_getPlatformIcon(acc['name']), color: const Color(0xFF6C4DFF)),
+                                  ),
+                                  title: Text(acc['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  subtitle: Text(acc['identifier'], style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (acc['a2f'] == 1)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          margin: const EdgeInsets.only(right: 12),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Text('A2F', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+                                        ),
+                                      const Icon(Icons.chevron_right, color: Colors.black26),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -280,29 +289,33 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
   bool isPasswordVisible = false;
 
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _usernameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _identifierController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _secretKeyController = TextEditingController();
 
   Future<void> _saveAccount() async {
     final name = _nameController.text.trim();
-    final username = _usernameController.text.trim();
-    final email = _emailController.text.trim();
+    final identifier = _identifierController.text.trim();
     final password = _passwordController.text.trim();
-    final secretKey = _secretKeyController.text.trim();
+    String secretKey = _secretKeyController.text.trim().replaceAll(' ', '');
 
-    if (name.isEmpty || email.isEmpty || password.isEmpty) {
+    if (name.isEmpty || identifier.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nama, Email, dan Password wajib diisi')),
+        const SnackBar(content: Text('Nama, Username/Email, dan Password wajib diisi')),
+      );
+      return;
+    }
+
+    if (isA2fEnabled && secretKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Secret Key wajib diisi jika A2F aktif')),
       );
       return;
     }
 
     final row = {
       'name': name,
-      'username': username.isEmpty ? email : username,
-      'email': email,
+      'identifier': identifier,
       'password': password,
       'a2f': isA2fEnabled ? 1 : 0,
       'secret_key': isA2fEnabled ? secretKey : null,
@@ -338,47 +351,12 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Stack(
-                children: [
-                  Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
-                      ],
-                    ),
-                    child: const Icon(Icons.camera_alt, size: 40, color: Color(0xFF6C4DFF)),
-                  ),
-                  Positioned(
-                    bottom: -5,
-                    right: -5,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(color: Color(0xFF6C4DFF), shape: BoxShape.circle),
-                      child: const Icon(Icons.edit, color: Colors.white, size: 14),
-                    ),
-                  )
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Center(child: Text('Pilih Ikon', style: TextStyle(color: Colors.black54, fontSize: 12))),
-            const SizedBox(height: 32),
-
-            _buildLabel('Nama Akun'),
-            _buildTextField(controller: _nameController, hint: 'Instagram'),
+            _buildLabel('Nama Akun (Platform)'),
+            _buildTextField(controller: _nameController, hint: 'Contoh: Instagram'),
             const SizedBox(height: 20),
 
-            _buildLabel('Username'),
-            _buildTextField(controller: _usernameController, hint: 'johndoe_99'),
-            const SizedBox(height: 20),
-
-            _buildLabel('Email (wajib)'),
-            _buildTextField(controller: _emailController, hint: 'johndoe@gmail.com'),
+            _buildLabel('Username / Email'),
+            _buildTextField(controller: _identifierController, hint: 'johndoe_99 atau email@domain.com'),
             const SizedBox(height: 20),
 
             _buildLabel('Password (wajib)'),
@@ -418,40 +396,8 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Scan QR atau masukkan secret key', style: TextStyle(fontSize: 12, color: Colors.black54)),
+                      const Text('Masukkan Secret Key untuk menghasilkan kode', style: TextStyle(fontSize: 12, color: Colors.black54)),
                       const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF6C4DFF).withOpacity(0.1),
-                                foregroundColor: const Color(0xFF6C4DFF),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              icon: const Icon(Icons.qr_code_scanner, size: 18),
-                              label: const Text('Scan QR'),
-                              onPressed: () {},
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.black87,
-                                side: const BorderSide(color: Colors.black12),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                              onPressed: () {},
-                              child: const Text('Manual Key'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
                       _buildLabel('Secret Key (Base32)'),
                       _buildTextField(controller: _secretKeyController, hint: 'JBSWY3DPEHPK3PXP'),
                     ],
@@ -510,6 +456,253 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
               : null,
         ),
       ),
+    );
+  }
+}
+
+// --- SCREEN 3: ACCOUNT DETAIL & TOTP GENERATOR ---
+class AccountDetailScreen extends StatefulWidget {
+  final Map<String, dynamic> account;
+
+  const AccountDetailScreen({Key? key, required this.account}) : super(key: key);
+
+  @override
+  State<AccountDetailScreen> createState() => _AccountDetailScreenState();
+}
+
+class _AccountDetailScreenState extends State<AccountDetailScreen> {
+  Timer? _timer;
+  int _secondsRemaining = 30;
+  String _currentTotp = '000000';
+  bool _isPasswordVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.account['a2f'] == 1 && widget.account['secret_key'] != null) {
+      _generateTotp();
+      _startTimer();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _generateTotp() {
+    try {
+      final String code = OTP.generateTOTPCodeString(
+        widget.account['secret_key'],
+        DateTime.now().millisecondsSinceEpoch,
+        length: 6,
+        interval: 30,
+        algorithm: Algorithm.SHA1,
+        isGoogle: true,
+      );
+      if (mounted) {
+        setState(() {
+          _currentTotp = code;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _currentTotp = 'ERROR';
+        });
+      }
+    }
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          int epochSeconds = (DateTime.now().millisecondsSinceEpoch / 1000).floor();
+          _secondsRemaining = 30 - (epochSeconds % 30);
+          if (_secondsRemaining == 30) {
+            _generateTotp();
+          }
+        });
+      }
+    });
+  }
+
+  void _copyToClipboard(String text, String label) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$label berhasil disalin')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = widget.account;
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(acc['name'], style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w600)),
+        centerTitle: true,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GlassCard(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Detail Kredensial', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 16),
+                    _buildDetailRow('Username / Email', acc['identifier']),
+                    const Divider(height: 30),
+                    _buildPasswordRow('Password', acc['password']),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            if (acc['a2f'] == 1) ...[
+              const Text('Autentikasi Dua Faktor', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+              const SizedBox(height: 16),
+              GlassCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SizedBox(
+                              width: 80,
+                              height: 80,
+                              child: CircularProgressIndicator(
+                                value: _secondsRemaining / 30,
+                                strokeWidth: 6,
+                                backgroundColor: Colors.black.withOpacity(0.05),
+                                color: const Color(0xFF6C4DFF),
+                              ),
+                            ),
+                            Text(
+                              '${_secondsRemaining}s',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6C4DFF), fontSize: 16),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        Text(
+                          _currentTotp.padLeft(6, '0').replaceAllMapped(RegExp(r".{3}"), (match) => "${match.group(0)} "),
+                          style: const TextStyle(fontSize: 40, letterSpacing: 4, fontWeight: FontWeight.bold, color: Color(0xFF6C4DFF)),
+                        ),
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF6C4DFF),
+                            side: const BorderSide(color: Color(0xFF6C4DFF)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.copy, size: 18),
+                          label: const Text('Salin Token'),
+                          onPressed: () => _copyToClipboard(_currentTotp, 'Token'),
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+            ],
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent.withOpacity(0.1),
+                  foregroundColor: Colors.redAccent,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  elevation: 0,
+                ),
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Hapus Akun', style: TextStyle(fontWeight: FontWeight.bold)),
+                onPressed: () async {
+                  await DatabaseHelper.instance.deleteAccount(acc['id']);
+                  if (mounted) {
+                    Navigator.pop(context, true);
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            const SizedBox(height: 4),
+            Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+          ],
+        ),
+        IconButton(
+          icon: const Icon(Icons.copy, size: 20, color: Colors.black38),
+          onPressed: () => _copyToClipboard(value, label),
+        )
+      ],
+    );
+  }
+
+  Widget _buildPasswordRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+            const SizedBox(height: 4),
+            Text(
+              _isPasswordVisible ? value : '••••••••••••',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            IconButton(
+              icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off, size: 20, color: Colors.black38),
+              onPressed: () {
+                setState(() {
+                  _isPasswordVisible = !_isPasswordVisible;
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.copy, size: 20, color: Colors.black38),
+              onPressed: () => _copyToClipboard(value, label),
+            ),
+          ],
+        )
+      ],
     );
   }
 }
