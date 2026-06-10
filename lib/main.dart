@@ -1,5 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
 
 void main() {
   runApp(const SocialMediaManagerApp());
@@ -20,28 +22,121 @@ class SocialMediaManagerApp extends StatelessWidget {
           seedColor: const Color(0xFF6C4DFF),
           primary: const Color(0xFF6C4DFF),
         ),
-        fontFamily: 'Roboto', // Menggunakan font bawaan yang bersih
+        fontFamily: 'Roboto',
       ),
       home: const DashboardScreen(),
     );
   }
 }
 
-// --- SCREEN 1: DASHBOARD ---
+// --- DATABASE HELPER ---
+class DatabaseHelper {
+  static final DatabaseHelper instance = DatabaseHelper._init();
+  static Database? _database;
 
-class DashboardScreen extends StatelessWidget {
+  DatabaseHelper._init();
+
+  Future<Database> get database async {
+    if (_database != null) return _database!;
+    _database = await _initDB('social_media_manager.db');
+    return _database!;
+  }
+
+  Future<Database> _initDB(String filePath) async {
+    final dbPath = await getDatabasesPath();
+    final path = p.join(dbPath, filePath);
+
+    return await openDatabase(path, version: 1, onCreate: _createDB);
+  }
+
+  Future _createDB(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        username TEXT NOT NULL,
+        email TEXT NOT NULL,
+        password TEXT NOT NULL,
+        a2f INTEGER NOT NULL,
+        secret_key TEXT
+      )
+    ''');
+  }
+
+  Future<int> insertAccount(Map<String, dynamic> row) async {
+    final db = await instance.database;
+    return await db.insert('accounts', row);
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAllAccounts() async {
+    final db = await instance.database;
+    return await db.query('accounts', orderBy: 'id DESC');
+  }
+
+  Future<List<Map<String, dynamic>>> searchAccounts(String query) async {
+    final db = await instance.database;
+    return await db.query(
+      'accounts',
+      where: 'name LIKE ? OR username LIKE ? OR email LIKE ?',
+      whereArgs: ['%$query%', '%$query%', '%$query%'],
+      orderBy: 'id DESC',
+    );
+  }
+
+  Future<int> deleteAccount(int id) async {
+    final db = await instance.database;
+    return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
+  }
+}
+
+// --- SCREEN 1: DASHBOARD ---
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    final List<Map<String, dynamic>> accounts = [
-      {'name': 'Instagram', 'user': 'johndoe_99', 'a2f': true, 'icon': Icons.camera_alt},
-      {'name': 'Facebook', 'user': 'johndoe.fb', 'a2f': true, 'icon': Icons.facebook},
-      {'name': 'X (Twitter)', 'user': 'johndoe_x', 'a2f': false, 'icon': Icons.close},
-      {'name': 'Google', 'user': 'johndoe@gmail.com', 'a2f': true, 'icon': Icons.g_mobiledata},
-      {'name': 'TikTok', 'user': 'johndoe.tiktok', 'a2f': false, 'icon': Icons.music_note},
-    ];
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
 
+class _DashboardScreenState extends State<DashboardScreen> {
+  List<Map<String, dynamic>> _accounts = [];
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshAccounts();
+  }
+
+  Future<void> _refreshAccounts() async {
+    final data = await DatabaseHelper.instance.fetchAllAccounts();
+    setState(() {
+      _accounts = data;
+    });
+  }
+
+  Future<void> _searchAccounts(String query) async {
+    if (query.isEmpty) {
+      _refreshAccounts();
+      return;
+    }
+    final data = await DatabaseHelper.instance.searchAccounts(query);
+    setState(() {
+      _accounts = data;
+    });
+  }
+
+  IconData _getPlatformIcon(String name) {
+    final lowerName = name.toLowerCase();
+    if (lowerName.contains('instagram')) return Icons.camera_alt;
+    if (lowerName.contains('facebook')) return Icons.facebook;
+    if (lowerName.contains('x') || lowerName.contains('twitter')) return Icons.close;
+    if (lowerName.contains('google')) return Icons.g_mobiledata;
+    if (lowerName.contains('tiktok')) return Icons.music_note;
+    return Icons.lock;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -71,12 +166,14 @@ class DashboardScreen extends StatelessWidget {
                   ],
                 ),
                 child: TextField(
-                  decoration: InputDecoration(
+                  controller: _searchController,
+                  onChanged: _searchAccounts,
+                  decoration: const InputDecoration(
                     hintText: 'Cari akun...',
-                    hintStyle: const TextStyle(color: Colors.black38),
-                    prefixIcon: const Icon(Icons.search, color: Colors.black38),
+                    hintStyle: TextStyle(color: Colors.black38),
+                    prefixIcon: Icon(Icons.search, color: Colors.black38),
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                    contentPadding: EdgeInsets.symmetric(vertical: 16),
                   ),
                 ),
               ),
@@ -84,46 +181,59 @@ class DashboardScreen extends StatelessWidget {
 
               // List of Accounts
               Expanded(
-                child: ListView.builder(
-                  itemCount: accounts.length,
-                  itemBuilder: (context, index) {
-                    final acc = accounts[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: GlassCard(
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          leading: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF6C4DFF).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(acc['icon'], color: const Color(0xFF6C4DFF)),
-                          ),
-                          title: Text(acc['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text(acc['user'], style: const TextStyle(color: Colors.black54, fontSize: 13)),
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (acc['a2f'])
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  margin: const EdgeInsets.only(right: 12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Text('A2F', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
-                                ),
-                              const Icon(Icons.chevron_right, color: Colors.black26),
-                            ],
-                          ),
+                child: _accounts.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'Belum ada akun yang disimpan',
+                          style: TextStyle(color: Colors.black38),
                         ),
+                      )
+                    : ListView.builder(
+                        itemCount: _accounts.length,
+                        itemBuilder: (context, index) {
+                          final acc = _accounts[index];
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 16.0),
+                            child: GlassCard(
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                leading: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF6C4DFF).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(_getPlatformIcon(acc['name']), color: const Color(0xFF6C4DFF)),
+                                ),
+                                title: Text(acc['name'], style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Text(acc['username'], style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (acc['a2f'] == 1)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        margin: const EdgeInsets.only(right: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Text('A2F', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
+                                      ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                      onPressed: () async {
+                                        await DatabaseHelper.instance.deleteAccount(acc['id']);
+                                        _refreshAccounts();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -132,8 +242,14 @@ class DashboardScreen extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF6C4DFF),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-        onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const AddAccountScreen()));
+        onPressed: () async {
+          final result = await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const AddAccountScreen()),
+          );
+          if (result == true) {
+            _refreshAccounts();
+          }
         },
         child: const Icon(Icons.add, color: Colors.white),
       ),
@@ -152,7 +268,6 @@ class DashboardScreen extends StatelessWidget {
 }
 
 // --- SCREEN 2: ADD ACCOUNT FORM ---
-
 class AddAccountScreen extends StatefulWidget {
   const AddAccountScreen({Key? key}) : super(key: key);
 
@@ -163,6 +278,41 @@ class AddAccountScreen extends StatefulWidget {
 class _AddAccountScreenState extends State<AddAccountScreen> {
   bool isA2fEnabled = false;
   bool isPasswordVisible = false;
+
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _secretKeyController = TextEditingController();
+
+  Future<void> _saveAccount() async {
+    final name = _nameController.text.trim();
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final secretKey = _secretKeyController.text.trim();
+
+    if (name.isEmpty || email.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nama, Email, dan Password wajib diisi')),
+      );
+      return;
+    }
+
+    final row = {
+      'name': name,
+      'username': username.isEmpty ? email : username,
+      'email': email,
+      'password': password,
+      'a2f': isA2fEnabled ? 1 : 0,
+      'secret_key': isA2fEnabled ? secretKey : null,
+    };
+
+    await DatabaseHelper.instance.insertAccount(row);
+    if (mounted) {
+      Navigator.pop(context, true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -178,7 +328,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         centerTitle: true,
         actions: [
           TextButton(
-            onPressed: () {},
+            onPressed: _saveAccount,
             child: const Text('Simpan', style: TextStyle(color: Color(0xFF6C4DFF), fontWeight: FontWeight.bold)),
           ),
         ],
@@ -220,19 +370,20 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
             const SizedBox(height: 32),
 
             _buildLabel('Nama Akun'),
-            _buildTextField(hint: 'Instagram'),
+            _buildTextField(controller: _nameController, hint: 'Instagram'),
             const SizedBox(height: 20),
 
-            _buildLabel('Username / Email'),
-            _buildTextField(hint: 'johndoe_99'),
+            _buildLabel('Username'),
+            _buildTextField(controller: _usernameController, hint: 'johndoe_99'),
             const SizedBox(height: 20),
 
-            _buildLabel('Email'),
-            _buildTextField(hint: 'johndoe@gmail.com'),
+            _buildLabel('Email (wajib)'),
+            _buildTextField(controller: _emailController, hint: 'johndoe@gmail.com'),
             const SizedBox(height: 20),
 
             _buildLabel('Password (wajib)'),
             _buildTextField(
+              controller: _passwordController,
               hint: '••••••••••••',
               isPassword: true,
               isVisible: isPasswordVisible,
@@ -301,32 +452,8 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                         ],
                       ),
                       const SizedBox(height: 24),
-                      Center(
-                        child: Column(
-                          children: [
-                            const Text('Current Token', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                            const SizedBox(height: 12),
-                            Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                SizedBox(
-                                  width: 60,
-                                  height: 60,
-                                  child: CircularProgressIndicator(
-                                    value: 0.8, // Representasi 24 detik dari 30
-                                    strokeWidth: 4,
-                                    backgroundColor: Colors.black.withOpacity(0.05),
-                                    color: const Color(0xFF6C4DFF),
-                                  ),
-                                ),
-                                const Text('24s', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6C4DFF))),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            const Text('123 456', style: TextStyle(fontSize: 28, letterSpacing: 4, fontWeight: FontWeight.bold, color: Color(0xFF6C4DFF))),
-                          ],
-                        ),
-                      )
+                      _buildLabel('Secret Key (Base32)'),
+                      _buildTextField(controller: _secretKeyController, hint: 'JBSWY3DPEHPK3PXP'),
                     ],
                   ),
                 ),
@@ -343,7 +470,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   elevation: 0,
                 ),
-                onPressed: () {},
+                onPressed: _saveAccount,
                 child: const Text('Simpan Akun', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
@@ -360,7 +487,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
     );
   }
 
-  Widget _buildTextField({required String hint, bool isPassword = false, bool isVisible = false, VoidCallback? onVisibilityToggle}) {
+  Widget _buildTextField({required TextEditingController controller, required String hint, bool isPassword = false, bool isVisible = false, VoidCallback? onVisibilityToggle}) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -368,6 +495,7 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
         border: Border.all(color: Colors.black.withOpacity(0.05)),
       ),
       child: TextField(
+        controller: controller,
         obscureText: isPassword && !isVisible,
         decoration: InputDecoration(
           hintText: hint,
@@ -387,7 +515,6 @@ class _AddAccountScreenState extends State<AddAccountScreen> {
 }
 
 // --- KOMPONEN REUSABLE: GLASS CARD ---
-
 class GlassCard extends StatelessWidget {
   final Widget child;
 
