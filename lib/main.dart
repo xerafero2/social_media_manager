@@ -19,14 +19,14 @@ class SocialMediaManagerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Social Media Manager',
+      title: 'AccountManager',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF4F6F9), // Latar belakang abu-abu sangat lembut
+        scaffoldBackgroundColor: const Color(0xFFF4F6F9),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C4DFF),
-          primary: const Color(0xFF6C4DFF),
+          seedColor: const Color(0xFF1E40AF), // Menggunakan biru profesional
+          primary: const Color(0xFF1E40AF),
         ),
         fontFamily: 'Roboto',
       ),
@@ -44,7 +44,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('social_media_manager_v3.db');
+    _database = await _initDB('account_manager_v4.db');
     return _database!;
   }
 
@@ -67,7 +67,8 @@ class DatabaseHelper {
         updated_at TEXT,
         custom_icon_path TEXT,
         dob TEXT,
-        account_year TEXT
+        account_year TEXT,
+        tags TEXT
       )
     ''');
   }
@@ -85,65 +86,12 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> fetchAllAccounts() async {
     final db = await instance.database;
-    return await db.query('accounts', orderBy: 'updated_at DESC');
-  }
-
-  Future<List<Map<String, dynamic>>> searchAccounts(String query) async {
-    final db = await instance.database;
-    return await db.query(
-      'accounts',
-      where: 'name LIKE ? OR identifier LIKE ?',
-      whereArgs: ['%$query%', '%$query%'],
-      orderBy: 'updated_at DESC',
-    );
+    return await db.query('accounts', orderBy: 'id ASC');
   }
 
   Future<int> deleteAccount(int id) async {
     final db = await instance.database;
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
-  }
-}
-
-// --- KOMPONEN REUSABLE: SECTION CARD ---
-class SectionCard extends StatelessWidget {
-  final Widget child;
-  final String? title;
-
-  const SectionCard({Key? key, required this.child, this.title}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (title != null) ...[
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 12),
-            child: Text(
-              title!,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black54),
-            ),
-          ),
-        ],
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
-              ),
-            ],
-            border: Border.all(color: Colors.black.withOpacity(0.03)),
-          ),
-          child: child,
-        ),
-      ],
-    );
   }
 }
 
@@ -157,12 +105,31 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   List<Map<String, dynamic>> _accounts = [];
-  final TextEditingController _searchController = TextEditingController();
+  Timer? _globalTimer;
+  int _secondsRemaining = 30;
 
   @override
   void initState() {
     super.initState();
     _refreshAccounts();
+    _startGlobalTimer();
+  }
+
+  @override
+  void dispose() {
+    _globalTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startGlobalTimer() {
+    _globalTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          int epochSeconds = (DateTime.now().millisecondsSinceEpoch / 1000).floor();
+          _secondsRemaining = 30 - (epochSeconds % 30);
+        });
+      }
+    });
   }
 
   Future<void> _refreshAccounts() async {
@@ -170,152 +137,400 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (mounted) setState(() { _accounts = data; });
   }
 
-  Future<void> _searchAccounts(String query) async {
-    if (query.isEmpty) {
-      _refreshAccounts();
-      return;
-    }
-    final data = await DatabaseHelper.instance.searchAccounts(query);
-    if (mounted) setState(() { _accounts = data; });
-  }
-
-  IconData _getPlatformIcon(String name) {
-    final lowerName = name.toLowerCase();
-    if (lowerName.contains('instagram')) return Icons.camera_alt;
-    if (lowerName.contains('facebook')) return Icons.facebook;
-    if (lowerName.contains('x') || lowerName.contains('twitter')) return Icons.close;
-    if (lowerName.contains('google')) return Icons.g_mobiledata;
-    if (lowerName.contains('tiktok')) return Icons.music_note;
-    if (lowerName.contains('linkedin')) return Icons.work;
-    if (lowerName.contains('github')) return Icons.code;
-    if (lowerName.contains('discord')) return Icons.chat_bubble;
-    if (lowerName.contains('reddit')) return Icons.forum;
-    if (lowerName.contains('pinterest')) return Icons.push_pin;
-    return Icons.lock;
-  }
-
-  String _formatDate(String? isoString) {
-    if (isoString == null || isoString.isEmpty) return 'Tidak diketahui';
-    final date = DateTime.parse(isoString);
-    return DateFormat('dd MMM yyyy, HH:mm').format(date);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
+          children: [
+            _buildTopBar(),
+            Expanded(
+              child: _accounts.isEmpty
+                  ? const Center(child: Text('Belum ada akun yang disimpan', style: TextStyle(color: Colors.black38)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      itemCount: _accounts.length,
+                      itemBuilder: (context, index) {
+                        return AccountCard(
+                          account: _accounts[index],
+                          index: index + 1,
+                          secondsRemaining: _secondsRemaining,
+                          onRefresh: _refreshAccounts,
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      color: Colors.white,
+      child: Column(
+        children: [
+          Row(
             children: [
-              const SizedBox(height: 32),
-              const Text('Social Media Manager', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.black87, letterSpacing: -0.5)),
-              const SizedBox(height: 6),
-              const Text('Kelola semua akun sosial media Anda', style: TextStyle(fontSize: 14, color: Colors.black54)),
-              const SizedBox(height: 28),
+              const Icon(Icons.shield_outlined, color: Color(0xFF1E40AF), size: 28),
+              const SizedBox(width: 8),
+              const Text('AccountManager', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
+              const Spacer(),
               Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
-                  border: Border.all(color: Colors.black.withOpacity(0.02)),
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: _searchAccounts,
-                  decoration: const InputDecoration(
-                    hintText: 'Cari platform atau username...',
-                    hintStyle: TextStyle(color: Colors.black38, fontSize: 14),
-                    prefixIcon: Icon(Icons.search, color: Colors.black38),
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 16),
-                  ),
+                decoration: BoxDecoration(border: Border.all(color: Colors.black12), shape: BoxShape.circle),
+                child: IconButton(icon: const Icon(Icons.dark_mode_outlined, size: 20, color: Colors.black54), onPressed: () {}, constraints: const BoxConstraints()),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(color: const Color(0xFF1E40AF), borderRadius: BorderRadius.circular(20)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.dns_outlined, color: Colors.white, size: 16),
+                    const SizedBox(width: 4),
+                    const Text('Aktif', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                      child: Text('${_accounts.length}', style: const TextStyle(color: Color(0xFF1E40AF), fontSize: 10, fontWeight: FontWeight.bold)),
+                    )
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
-              Expanded(
-                child: _accounts.isEmpty
-                    ? const Center(child: Text('Belum ada akun yang disimpan', style: TextStyle(color: Colors.black38)))
-                    : ListView.builder(
-                        itemCount: _accounts.length,
-                        itemBuilder: (context, index) {
-                          final acc = _accounts[index];
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12.0),
-                            child: GestureDetector(
-                              onTap: () async {
-                                final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AccountDetailScreen(account: acc)));
-                                if (result == true) _refreshAccounts();
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(color: Colors.black.withOpacity(0.02)),
-                                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 52,
-                                      height: 52,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF6C4DFF).withOpacity(0.08),
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      clipBehavior: Clip.hardEdge,
-                                      child: acc['custom_icon_path'] != null && acc['custom_icon_path'].toString().isNotEmpty
-                                          ? Image.file(File(acc['custom_icon_path']), fit: BoxFit.cover)
-                                          : Icon(_getPlatformIcon(acc['name']), color: const Color(0xFF6C4DFF), size: 26),
-                                    ),
-                                    const SizedBox(width: 16),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(acc['name'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.black87)),
-                                          const SizedBox(height: 4),
-                                          Text(acc['identifier'], style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
-                                          const SizedBox(height: 6),
-                                          Text('Diperbarui: ${_formatDate(acc['updated_at'])}', style: const TextStyle(color: Colors.black38, fontSize: 11)),
-                                        ],
-                                      ),
-                                    ),
-                                    if (acc['a2f'] == 1)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        margin: const EdgeInsets.only(right: 12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.green.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Text('A2F', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.w800)),
-                                      ),
-                                    const Icon(Icons.arrow_forward_ios, color: Colors.black12, size: 16),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(border: Border.all(color: const Color(0xFFEF4444)), borderRadius: BorderRadius.circular(20)),
+                child: const Row(
+                  children: [
+                    Icon(Icons.delete_outline, color: Color(0xFFEF4444), size: 16),
+                    SizedBox(width: 4),
+                    Text('Sampah', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold, fontSize: 13)),
+                  ],
+                ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E40AF),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Tambah', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  onPressed: () async {
+                    final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const AccountFormScreen()));
+                    if (result == true) _refreshAccounts();
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                decoration: BoxDecoration(color: const Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
+                child: IconButton(
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  onPressed: () {},
+                ),
+              )
+            ],
+          )
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF6C4DFF),
-        elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        onPressed: () async {
-          final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const AccountFormScreen()));
-          if (result == true) _refreshAccounts();
-        },
-        child: const Icon(Icons.add, color: Colors.white),
+    );
+  }
+}
+
+// --- COMPONENT: EXPANDED ACCOUNT CARD ---
+class AccountCard extends StatefulWidget {
+  final Map<String, dynamic> account;
+  final int index;
+  final int secondsRemaining;
+  final VoidCallback onRefresh;
+
+  const AccountCard({Key? key, required this.account, required this.index, required this.secondsRemaining, required this.onRefresh}) : super(key: key);
+
+  @override
+  State<AccountCard> createState() => _AccountCardState();
+}
+
+class _AccountCardState extends State<AccountCard> {
+  bool _isPasswordVisible = false;
+
+  void _copyToClipboard(String text, String label) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label tersalin', style: const TextStyle(fontWeight: FontWeight.w500)), duration: const Duration(seconds: 1)));
+  }
+
+  String _getTotp() {
+    try {
+      return OTP.generateTOTPCodeString(widget.account['secret_key'], DateTime.now().millisecondsSinceEpoch, length: 6, interval: 30, algorithm: Algorithm.SHA1, isGoogle: true);
+    } catch (e) {
+      return 'ERROR ';
+    }
+  }
+
+  IconData _getPlatformIcon(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('fb') || lower.contains('facebook')) return Icons.facebook;
+    if (lower.contains('ig') || lower.contains('instagram')) return Icons.camera_alt;
+    if (lower.contains('google')) return Icons.g_mobiledata;
+    if (lower.contains('x') || lower.contains('twitter')) return Icons.close;
+    return Icons.public;
+  }
+
+  String _formatDate(String? isoString) {
+    if (isoString == null || isoString.isEmpty) return '';
+    return DateFormat('dd/MM/yyyy HH:mm:ss').format(DateTime.parse(isoString));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final acc = widget.account;
+    final List<String> tags = (acc['tags'] ?? '').toString().split(',').where((e) => e.trim().isNotEmpty).toList();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                _buildBadge(widget.index.toString(), isOutline: true),
+                if (acc['account_year'] != null && acc['account_year'].toString().isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  _buildBadge(acc['account_year'], bgColor: const Color(0xFFEFF6FF), textColor: const Color(0xFF1E40AF)),
+                ],
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: const Color(0xFF1877F2), borderRadius: BorderRadius.circular(12)),
+                  child: Row(
+                    children: [
+                      Icon(_getPlatformIcon(acc['name']), color: Colors.white, size: 14),
+                      const SizedBox(width: 4),
+                      Text(acc['name'].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+          
+          // Identifier & Password Row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF1E40AF), width: 1.5)),
+                  child: const Icon(Icons.person_outline, color: Color(0xFF1E40AF)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(acc['identifier'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.black87)),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.only(left: 12, right: 4, top: 4, bottom: 4),
+                        decoration: BoxDecoration(color: const Color(0xFFF8F9FA), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.black.withOpacity(0.05))),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _isPasswordVisible ? acc['password'] : '••••••••',
+                                style: TextStyle(fontSize: 14, fontFamily: 'monospace', letterSpacing: _isPasswordVisible ? 0 : 2, color: Colors.black87),
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(_isPasswordVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: Colors.black54),
+                              onPressed: () => setState(() { _isPasswordVisible = !_isPasswordVisible; }),
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.all(8),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.copy_outlined, size: 18, color: Colors.black54),
+                              onPressed: () => _copyToClipboard(acc['password'], 'Password'),
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.all(8),
+                            ),
+                          ],
+                        ),
+                      )
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+          
+          const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
+
+          // Details Row (DOB & Tags)
+          if ((acc['dob'] != null && acc['dob'].toString().isNotEmpty) || tags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (acc['dob'] != null && acc['dob'].toString().isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(color: const Color(0xFFEF4444), borderRadius: BorderRadius.circular(20)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.cake_outlined, color: Colors.white, size: 14),
+                          const SizedBox(width: 6),
+                          Text(acc['dob'], style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  if (tags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        const Icon(Icons.sports_esports_outlined, color: Colors.black45, size: 18),
+                        ...tags.map((t) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(6)),
+                          child: Text(t.trim(), style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w500)),
+                        )).toList(),
+                      ],
+                    )
+                  ]
+                ],
+              ),
+            ),
+
+          // 2FA Section
+          if (acc['a2f'] == 1 && acc['secret_key'] != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  border: Border.all(color: const Color(0xFF93C5FD), width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('2-FACTOR CODE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black54, letterSpacing: 0.5)),
+                          const SizedBox(height: 4),
+                          Text(
+                            _getTotp(),
+                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFDC2626), letterSpacing: 4),
+                          ),
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: LinearProgressIndicator(
+                              value: widget.secondsRemaining / 30,
+                              backgroundColor: Colors.black12,
+                              color: const Color(0xFFDC2626),
+                              minHeight: 3,
+                            ),
+                          )
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_outlined, color: Colors.black54),
+                      onPressed: () => _copyToClipboard(_getTotp().replaceAll(' ', ''), 'Token 2FA'),
+                    )
+                  ],
+                ),
+              ),
+            ),
+
+          // Action Buttons
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.black87,
+                          side: BorderSide(color: Colors.black.withOpacity(0.1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AccountFormScreen(account: acc)));
+                          if (result == true) widget.onRefresh();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      decoration: BoxDecoration(color: const Color(0xFFFFE4E6), borderRadius: BorderRadius.circular(8)),
+                      child: IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Color(0xFFE11D48)),
+                        onPressed: () async {
+                          await DatabaseHelper.instance.deleteAccount(acc['id']);
+                          widget.onRefresh();
+                        },
+                      ),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Text('Update: ${_formatDate(acc['updated_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
+                )
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBadge(String text, {bool isOutline = false, Color? bgColor, Color? textColor}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isOutline ? Colors.transparent : (bgColor ?? Colors.white),
+        border: Border.all(color: isOutline ? Colors.black12 : Colors.transparent),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textColor ?? Colors.black54)),
     );
   }
 }
@@ -332,7 +547,6 @@ class AccountFormScreen extends StatefulWidget {
 class _AccountFormScreenState extends State<AccountFormScreen> {
   bool isA2fEnabled = false;
   bool isPasswordVisible = false;
-  String? customIconPath;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _identifierController = TextEditingController();
@@ -340,7 +554,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   final TextEditingController _secretKeyController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
   final TextEditingController _yearController = TextEditingController();
-  final ImagePicker _picker = ImagePicker();
+  final TextEditingController _tagsController = TextEditingController();
 
   @override
   void initState() {
@@ -351,33 +565,10 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       _passwordController.text = widget.account!['password'];
       isA2fEnabled = widget.account!['a2f'] == 1;
       _secretKeyController.text = widget.account!['secret_key'] ?? '';
-      customIconPath = widget.account!['custom_icon_path'];
       _dobController.text = widget.account!['dob'] ?? '';
       _yearController.text = widget.account!['account_year'] ?? '';
+      _tagsController.text = widget.account!['tags'] ?? '';
     }
-  }
-
-  Future<void> _pickImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) setState(() { customIconPath = image.path; });
-  }
-
-  Future<void> _selectDate() async {
-    DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(1900),
-      lastDate: DateTime.now(),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(primary: Color(0xFF6C4DFF), onPrimary: Colors.white, onSurface: Colors.black87),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null) setState(() { _dobController.text = DateFormat('yyyy-MM-dd').format(picked); });
   }
 
   Future<void> _saveAccount() async {
@@ -387,7 +578,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     String secretKey = _secretKeyController.text.trim().replaceAll(' ', '');
 
     if (name.isEmpty || identifier.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nama, Username/Email, dan Password wajib diisi')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Platform, Username/Email, dan Password wajib diisi')));
       return;
     }
 
@@ -398,9 +589,9 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       'a2f': isA2fEnabled ? 1 : 0,
       'secret_key': isA2fEnabled ? secretKey : null,
       'updated_at': DateTime.now().toIso8601String(),
-      'custom_icon_path': customIconPath,
       'dob': _dobController.text.trim(),
       'account_year': _yearController.text.trim(),
+      'tags': _tagsController.text.trim(),
     };
 
     if (widget.account == null) {
@@ -417,422 +608,97 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     final isEdit = widget.account != null;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context)),
+        leading: IconButton(icon: const Icon(Icons.close, color: Colors.black87), onPressed: () => Navigator.pop(context)),
         title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
         child: Column(
           children: [
-            Center(
-              child: GestureDetector(
-                onTap: _pickImage,
-                child: Stack(
-                  children: [
-                    Container(
-                      width: 88,
-                      height: 88,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
-                        border: Border.all(color: Colors.black.withOpacity(0.02)),
-                      ),
-                      clipBehavior: Clip.hardEdge,
-                      child: customIconPath != null
-                          ? Image.file(File(customIconPath!), fit: BoxFit.cover)
-                          : const Icon(Icons.camera_alt_outlined, size: 36, color: Color(0xFF6C4DFF)),
-                    ),
-                    Positioned(
-                      bottom: -4,
-                      right: -4,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6C4DFF),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
-                        ),
-                        child: const Icon(Icons.edit, color: Colors.white, size: 14),
-                      ),
-                    )
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
-
-            SectionCard(
-              title: 'INFORMASI UTAMA',
-              child: Column(
-                children: [
-                  _buildTextField(controller: _nameController, hint: 'Nama Platform (Instagram, Github, dll)'),
-                  const SizedBox(height: 16),
-                  _buildTextField(controller: _identifierController, hint: 'Username atau Email'),
-                ],
-              ),
+            _buildTextField(controller: _nameController, hint: 'Singkatan / Platform (Cth: FB, IG)', icon: Icons.public),
+            const SizedBox(height: 16),
+            _buildTextField(controller: _identifierController, hint: 'Email atau Username', icon: Icons.person_outline),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _passwordController,
+              hint: 'Password Akun',
+              icon: Icons.lock_outline,
+              isPassword: true,
+              isVisible: isPasswordVisible,
+              onVisibilityToggle: () => setState(() { isPasswordVisible = !isPasswordVisible; }),
             ),
             const SizedBox(height: 24),
-
-            SectionCard(
-              title: 'KEAMANAN',
+            Row(
+              children: [
+                Expanded(child: _buildTextField(controller: _dobController, hint: 'Tgl Lahir (Cth: 10 Okt 1980)')),
+                const SizedBox(width: 12),
+                Expanded(child: _buildTextField(controller: _yearController, hint: 'Tahun Buat', keyboardType: TextInputType.number)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(controller: _tagsController, hint: 'Kategori / Game (pisahkan dengan koma)', icon: Icons.sports_esports_outlined),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.05))),
               child: Column(
                 children: [
-                  _buildTextField(
-                    controller: _passwordController,
-                    hint: 'Password Akun',
-                    isPassword: true,
-                    isVisible: isPasswordVisible,
-                    onVisibilityToggle: () => setState(() { isPasswordVisible = !isPasswordVisible; }),
-                  ),
-                  const SizedBox(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Aktifkan A2F (TOTP)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
-                      Switch(
-                        value: isA2fEnabled,
-                        activeColor: const Color(0xFF6C4DFF),
-                        onChanged: (val) => setState(() { isA2fEnabled = val; }),
-                      ),
+                      const Text('Aktifkan 2-Factor Code', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                      Switch(value: isA2fEnabled, activeColor: const Color(0xFF1E40AF), onChanged: (val) => setState(() { isA2fEnabled = val; })),
                     ],
                   ),
                   if (isA2fEnabled) ...[
-                    const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
-                    _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key (Base32)'),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            SectionCard(
-              title: 'DATA OPSIONAL',
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: _selectDate,
-                      child: AbsorbPointer(child: _buildTextField(controller: _dobController, hint: 'Tgl Lahir', icon: Icons.calendar_today_outlined)),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildTextField(controller: _yearController, hint: 'Tahun Akun', keyboardType: TextInputType.number),
-                  ),
+                    const Divider(height: 24),
+                    _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
+                  ]
                 ],
               ),
             ),
             const SizedBox(height: 40),
-
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6C4DFF),
+                  backgroundColor: const Color(0xFF1E40AF),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: _saveAccount,
-                child: Text(isEdit ? 'Simpan Perubahan' : 'Tambahkan Akun', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
-            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTextField({required TextEditingController controller, required String hint, bool isPassword = false, bool isVisible = false, VoidCallback? onVisibilityToggle, IconData? icon, TextInputType keyboardType = TextInputType.text}) {
+  Widget _buildTextField({required TextEditingController controller, required String hint, IconData? icon, bool isPassword = false, bool isVisible = false, VoidCallback? onVisibilityToggle, TextInputType keyboardType = TextInputType.text}) {
     return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.transparent),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.1))),
       child: TextField(
         controller: controller,
         obscureText: isPassword && !isVisible,
         keyboardType: keyboardType,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Colors.black38, fontSize: 14, fontWeight: FontWeight.normal),
+          hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           prefixIcon: icon != null ? Icon(icon, color: Colors.black38, size: 20) : null,
           suffixIcon: isPassword
-              ? IconButton(icon: Icon(isVisible ? Icons.visibility : Icons.visibility_off, color: Colors.black38, size: 20), onPressed: onVisibilityToggle)
+              ? IconButton(icon: Icon(isVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.black38, size: 20), onPressed: onVisibilityToggle)
               : null,
         ),
       ),
-    );
-  }
-}
-
-// --- SCREEN 3: ACCOUNT DETAIL ---
-class AccountDetailScreen extends StatefulWidget {
-  final Map<String, dynamic> account;
-  const AccountDetailScreen({Key? key, required this.account}) : super(key: key);
-
-  @override
-  State<AccountDetailScreen> createState() => _AccountDetailScreenState();
-}
-
-class _AccountDetailScreenState extends State<AccountDetailScreen> {
-  Timer? _timer;
-  int _secondsRemaining = 30;
-  String _currentTotp = '000000';
-  bool _isPasswordVisible = false;
-  late Map<String, dynamic> currentAccount;
-
-  @override
-  void initState() {
-    super.initState();
-    currentAccount = widget.account;
-    _checkA2f();
-  }
-
-  void _checkA2f() {
-    if (currentAccount['a2f'] == 1 && currentAccount['secret_key'] != null) {
-      _generateTotp();
-      _startTimer();
-    } else {
-      _timer?.cancel();
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  void _generateTotp() {
-    try {
-      final String code = OTP.generateTOTPCodeString(currentAccount['secret_key'], DateTime.now().millisecondsSinceEpoch, length: 6, interval: 30, algorithm: Algorithm.SHA1, isGoogle: true);
-      if (mounted) setState(() { _currentTotp = code; });
-    } catch (e) {
-      if (mounted) setState(() { _currentTotp = 'ERROR'; });
-    }
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          int epochSeconds = (DateTime.now().millisecondsSinceEpoch / 1000).floor();
-          _secondsRemaining = 30 - (epochSeconds % 30);
-          if (_secondsRemaining == 30) _generateTotp();
-        });
-      }
-    });
-  }
-
-  void _copyToClipboard(String text, String label) {
-    Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label berhasil disalin', style: const TextStyle(fontWeight: FontWeight.w500))));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context, true)),
-        title: Text(currentAccount['name'], style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, color: Color(0xFF6C4DFF)),
-            onPressed: () async {
-              final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AccountFormScreen(account: currentAccount)));
-              if (result == true) {
-                final updatedData = await DatabaseHelper.instance.fetchAllAccounts();
-                final updatedAccount = updatedData.firstWhere((element) => element['id'] == currentAccount['id']);
-                setState(() {
-                  currentAccount = updatedAccount;
-                  _checkA2f();
-                });
-              }
-            },
-          )
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SectionCard(
-              title: 'KREDENSIAL UTAMA',
-              child: Column(
-                children: [
-                  _buildDetailRow('Username / Email', currentAccount['identifier']),
-                  const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
-                  _buildPasswordRow('Password', currentAccount['password']),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            if (currentAccount['dob'] != null && currentAccount['dob'].toString().isNotEmpty || 
-                currentAccount['account_year'] != null && currentAccount['account_year'].toString().isNotEmpty) ...[
-              SectionCard(
-                title: 'INFORMASI TAMBAHAN',
-                child: Column(
-                  children: [
-                    if (currentAccount['dob'] != null && currentAccount['dob'].toString().isNotEmpty) ...[
-                      _buildDetailRow('Tanggal Lahir', currentAccount['dob']),
-                    ],
-                    if (currentAccount['account_year'] != null && currentAccount['account_year'].toString().isNotEmpty) ...[
-                      if (currentAccount['dob'] != null && currentAccount['dob'].toString().isNotEmpty)
-                        const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
-                      _buildDetailRow('Tahun Pembuatan Akun', currentAccount['account_year']),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-
-            if (currentAccount['a2f'] == 1) ...[
-              SectionCard(
-                title: 'KODE AUTENTIKASI',
-                child: Center(
-                  child: Column(
-                    children: [
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          SizedBox(
-                            width: 70,
-                            height: 70,
-                            child: CircularProgressIndicator(
-                              value: _secondsRemaining / 30,
-                              strokeWidth: 5,
-                              backgroundColor: Colors.black.withOpacity(0.04),
-                              color: const Color(0xFF6C4DFF),
-                            ),
-                          ),
-                          Text('${_secondsRemaining}s', style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6C4DFF), fontSize: 16)),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        _currentTotp.padLeft(6, '0').replaceAllMapped(RegExp(r".{3}"), (match) => "${match.group(0)} "),
-                        style: const TextStyle(fontSize: 42, letterSpacing: 6, fontWeight: FontWeight.w800, color: Color(0xFF6C4DFF)),
-                      ),
-                      const SizedBox(height: 20),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF6C4DFF),
-                          side: const BorderSide(color: Color(0xFF6C4DFF), width: 1.5),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        ),
-                        icon: const Icon(Icons.copy, size: 18),
-                        label: const Text('Salin Token', style: TextStyle(fontWeight: FontWeight.bold)),
-                        onPressed: () => _copyToClipboard(_currentTotp, 'Token'),
-                      )
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFF0F0),
-                  foregroundColor: const Color(0xFFE53935),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  elevation: 0,
-                ),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Hapus Akun secara Permanen', style: TextStyle(fontWeight: FontWeight.bold)),
-                onPressed: () async {
-                  await DatabaseHelper.instance.deleteAccount(currentAccount['id']);
-                  if (mounted) Navigator.pop(context, true);
-                },
-              ),
-            ),
-            const SizedBox(height: 32),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
-            ],
-          ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.copy_rounded, size: 20, color: Colors.black38),
-          onPressed: () => _copyToClipboard(value, label),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-        )
-      ],
-    );
-  }
-
-  Widget _buildPasswordRow(String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              Text(
-                _isPasswordVisible ? value : '••••••••••••',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
-              ),
-            ],
-          ),
-        ),
-        Row(
-          children: [
-            IconButton(
-              icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off, size: 20, color: Colors.black38),
-              onPressed: () => setState(() { _isPasswordVisible = !_isPasswordVisible; }),
-              padding: const EdgeInsets.only(right: 12),
-              constraints: const BoxConstraints(),
-            ),
-            IconButton(
-              icon: const Icon(Icons.copy_rounded, size: 20, color: Colors.black38),
-              onPressed: () => _copyToClipboard(value, label),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          ],
-        )
-      ],
     );
   }
 }
