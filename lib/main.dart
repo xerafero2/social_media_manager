@@ -23,7 +23,7 @@ class SocialMediaManagerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF8F9FC),
+        scaffoldBackgroundColor: const Color(0xFFF4F6F9), // Latar belakang abu-abu sangat lembut
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFF6C4DFF),
           primary: const Color(0xFF6C4DFF),
@@ -104,6 +104,49 @@ class DatabaseHelper {
   }
 }
 
+// --- KOMPONEN REUSABLE: SECTION CARD ---
+class SectionCard extends StatelessWidget {
+  final Widget child;
+  final String? title;
+
+  const SectionCard({Key? key, required this.child, this.title}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (title != null) ...[
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 12),
+            child: Text(
+              title!,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black54),
+            ),
+          ),
+        ],
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
+            ],
+            border: Border.all(color: Colors.black.withOpacity(0.03)),
+          ),
+          child: child,
+        ),
+      ],
+    );
+  }
+}
+
 // --- SCREEN 1: DASHBOARD ---
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -124,11 +167,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _refreshAccounts() async {
     final data = await DatabaseHelper.instance.fetchAllAccounts();
-    if (mounted) {
-      setState(() {
-        _accounts = data;
-      });
-    }
+    if (mounted) setState(() { _accounts = data; });
   }
 
   Future<void> _searchAccounts(String query) async {
@@ -137,11 +176,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       return;
     }
     final data = await DatabaseHelper.instance.searchAccounts(query);
-    if (mounted) {
-      setState(() {
-        _accounts = data;
-      });
-    }
+    if (mounted) setState(() { _accounts = data; });
   }
 
   IconData _getPlatformIcon(String name) {
@@ -175,30 +210,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 32),
-              const Text(
-                'Social Media Manager',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black87),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Kelola semua akun sosial media Anda',
-                style: TextStyle(fontSize: 14, color: Colors.black54),
-              ),
-              const SizedBox(height: 24),
+              const Text('Social Media Manager', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.black87, letterSpacing: -0.5)),
+              const SizedBox(height: 6),
+              const Text('Kelola semua akun sosial media Anda', style: TextStyle(fontSize: 14, color: Colors.black54)),
+              const SizedBox(height: 28),
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
-                  ],
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
+                  border: Border.all(color: Colors.black.withOpacity(0.02)),
                 ),
                 child: TextField(
                   controller: _searchController,
                   onChanged: _searchAccounts,
                   decoration: const InputDecoration(
-                    hintText: 'Cari akun...',
-                    hintStyle: TextStyle(color: Colors.black38),
+                    hintText: 'Cari platform atau username...',
+                    hintStyle: TextStyle(color: Colors.black38, fontSize: 14),
                     prefixIcon: Icon(Icons.search, color: Colors.black38),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.symmetric(vertical: 16),
@@ -208,69 +236,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const SizedBox(height: 24),
               Expanded(
                 child: _accounts.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'Belum ada akun yang disimpan',
-                          style: TextStyle(color: Colors.black38),
-                        ),
-                      )
+                    ? const Center(child: Text('Belum ada akun yang disimpan', style: TextStyle(color: Colors.black38)))
                     : ListView.builder(
                         itemCount: _accounts.length,
                         itemBuilder: (context, index) {
                           final acc = _accounts[index];
                           return Padding(
-                            padding: const EdgeInsets.only(bottom: 16.0),
+                            padding: const EdgeInsets.only(bottom: 12.0),
                             child: GestureDetector(
                               onTap: () async {
-                                final result = await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (context) => AccountDetailScreen(account: acc)),
-                                );
+                                final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AccountDetailScreen(account: acc)));
                                 if (result == true) _refreshAccounts();
                               },
-                              child: GlassCard(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  child: Row(
-                                    children: [
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.black.withOpacity(0.02)),
+                                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF6C4DFF).withOpacity(0.08),
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      clipBehavior: Clip.hardEdge,
+                                      child: acc['custom_icon_path'] != null && acc['custom_icon_path'].toString().isNotEmpty
+                                          ? Image.file(File(acc['custom_icon_path']), fit: BoxFit.cover)
+                                          : Icon(_getPlatformIcon(acc['name']), color: const Color(0xFF6C4DFF), size: 26),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(acc['name'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.black87)),
+                                          const SizedBox(height: 4),
+                                          Text(acc['identifier'], style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w500)),
+                                          const SizedBox(height: 6),
+                                          Text('Diperbarui: ${_formatDate(acc['updated_at'])}', style: const TextStyle(color: Colors.black38, fontSize: 11)),
+                                        ],
+                                      ),
+                                    ),
+                                    if (acc['a2f'] == 1)
                                       Container(
-                                        width: 48,
-                                        height: 48,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        margin: const EdgeInsets.only(right: 12),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF6C4DFF).withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(12),
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
-                                        clipBehavior: Clip.hardEdge,
-                                        child: acc['custom_icon_path'] != null && acc['custom_icon_path'].toString().isNotEmpty
-                                            ? Image.file(File(acc['custom_icon_path']), fit: BoxFit.cover)
-                                            : Icon(_getPlatformIcon(acc['name']), color: const Color(0xFF6C4DFF)),
+                                        child: const Text('A2F', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.w800)),
                                       ),
-                                      const SizedBox(width: 16),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(acc['name'], style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                                            const SizedBox(height: 4),
-                                            Text(acc['identifier'], style: const TextStyle(color: Colors.black87, fontSize: 13)),
-                                            const SizedBox(height: 4),
-                                            Text('Diperbarui: ${_formatDate(acc['updated_at'])}', style: const TextStyle(color: Colors.black45, fontSize: 11)),
-                                          ],
-                                        ),
-                                      ),
-                                      if (acc['a2f'] == 1)
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          margin: const EdgeInsets.only(right: 8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.green.withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: const Text('A2F', style: TextStyle(color: Colors.green, fontSize: 10, fontWeight: FontWeight.bold)),
-                                        ),
-                                      const Icon(Icons.chevron_right, color: Colors.black26),
-                                    ],
-                                  ),
+                                    const Icon(Icons.arrow_forward_ios, color: Colors.black12, size: 16),
+                                  ],
                                 ),
                               ),
                             ),
@@ -284,12 +308,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF6C4DFF),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const AccountFormScreen()),
-          );
+          final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const AccountFormScreen()));
           if (result == true) _refreshAccounts();
         },
         child: const Icon(Icons.add, color: Colors.white),
@@ -301,7 +323,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 // --- SCREEN 2: ADD / EDIT ACCOUNT FORM ---
 class AccountFormScreen extends StatefulWidget {
   final Map<String, dynamic>? account;
-
   const AccountFormScreen({Key? key, this.account}) : super(key: key);
 
   @override
@@ -319,7 +340,6 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   final TextEditingController _secretKeyController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
   final TextEditingController _yearController = TextEditingController();
-
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -339,11 +359,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
 
   Future<void> _pickImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() {
-        customIconPath = image.path;
-      });
-    }
+    if (image != null) setState(() { customIconPath = image.path; });
   }
 
   Future<void> _selectDate() async {
@@ -355,21 +371,13 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF6C4DFF),
-              onPrimary: Colors.white,
-              onSurface: Colors.black87,
-            ),
+            colorScheme: const ColorScheme.light(primary: Color(0xFF6C4DFF), onPrimary: Colors.white, onSurface: Colors.black87),
           ),
           child: child!,
         );
       },
     );
-    if (picked != null) {
-      setState(() {
-        _dobController.text = DateFormat('yyyy-MM-dd').format(picked);
-      });
-    }
+    if (picked != null) setState(() { _dobController.text = DateFormat('yyyy-MM-dd').format(picked); });
   }
 
   Future<void> _saveAccount() async {
@@ -379,9 +387,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     String secretKey = _secretKeyController.text.trim().replaceAll(' ', '');
 
     if (name.isEmpty || identifier.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nama, Username/Email, dan Password wajib diisi')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nama, Username/Email, dan Password wajib diisi')));
       return;
     }
 
@@ -403,7 +409,6 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       row['id'] = widget.account!['id'];
       await DatabaseHelper.instance.updateAccount(row);
     }
-
     if (mounted) Navigator.pop(context, true);
   }
 
@@ -414,17 +419,13 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w600)),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context)),
+        title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Center(
               child: GestureDetector(
@@ -432,24 +433,29 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                 child: Stack(
                   children: [
                     Container(
-                      width: 80,
-                      height: 80,
+                      width: 88,
+                      height: 88,
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+                        border: Border.all(color: Colors.black.withOpacity(0.02)),
                       ),
                       clipBehavior: Clip.hardEdge,
                       child: customIconPath != null
                           ? Image.file(File(customIconPath!), fit: BoxFit.cover)
-                          : const Icon(Icons.camera_alt, size: 40, color: Color(0xFF6C4DFF)),
+                          : const Icon(Icons.camera_alt_outlined, size: 36, color: Color(0xFF6C4DFF)),
                     ),
                     Positioned(
-                      bottom: -5,
-                      right: -5,
+                      bottom: -4,
+                      right: -4,
                       child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: const BoxDecoration(color: Color(0xFF6C4DFF), shape: BoxShape.circle),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6C4DFF),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
                         child: const Icon(Icons.edit, color: Colors.white, size: 14),
                       ),
                     )
@@ -457,140 +463,112 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            const Center(child: Text('Pilih Ikon Kustom', style: TextStyle(color: Colors.black54, fontSize: 12))),
             const SizedBox(height: 32),
 
-            _buildLabel('Nama Akun (Platform)'),
-            _buildTextField(controller: _nameController, hint: 'Contoh: Instagram'),
-            const SizedBox(height: 20),
-
-            _buildLabel('Username / Email'),
-            _buildTextField(controller: _identifierController, hint: 'johndoe_99 atau email@domain.com'),
-            const SizedBox(height: 20),
-
-            _buildLabel('Password (wajib)'),
-            _buildTextField(
-              controller: _passwordController,
-              hint: '••••••••••••',
-              isPassword: true,
-              isVisible: isPasswordVisible,
-              onVisibilityToggle: () {
-                setState(() { isPasswordVisible = !isPasswordVisible; });
-              },
+            SectionCard(
+              title: 'INFORMASI UTAMA',
+              child: Column(
+                children: [
+                  _buildTextField(controller: _nameController, hint: 'Nama Platform (Instagram, Github, dll)'),
+                  const SizedBox(height: 16),
+                  _buildTextField(controller: _identifierController, hint: 'Username atau Email'),
+                ],
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            SectionCard(
+              title: 'KEAMANAN',
+              child: Column(
+                children: [
+                  _buildTextField(
+                    controller: _passwordController,
+                    hint: 'Password Akun',
+                    isPassword: true,
+                    isVisible: isPasswordVisible,
+                    onVisibilityToggle: () => setState(() { isPasswordVisible = !isPasswordVisible; }),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _buildLabel('Tanggal Lahir Akun (Opsional)'),
-                      GestureDetector(
-                        onTap: _selectDate,
-                        child: AbsorbPointer(
-                          child: _buildTextField(controller: _dobController, hint: 'YYYY-MM-DD', icon: Icons.calendar_today),
-                        ),
+                      const Text('Aktifkan A2F (TOTP)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
+                      Switch(
+                        value: isA2fEnabled,
+                        activeColor: const Color(0xFF6C4DFF),
+                        onChanged: (val) => setState(() { isA2fEnabled = val; }),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildLabel('Tahun Akun (Opsional)'),
-                      _buildTextField(controller: _yearController, hint: 'Contoh: 2023', keyboardType: TextInputType.number),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 32),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('A2F (TOTP) - Opsional', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                Switch(
-                  value: isA2fEnabled,
-                  activeColor: const Color(0xFF6C4DFF),
-                  onChanged: (val) {
-                    setState(() { isA2fEnabled = val; });
-                  },
-                ),
-              ],
-            ),
-            if (isA2fEnabled) ...[
-              const SizedBox(height: 16),
-              GlassCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Masukkan Secret Key untuk menghasilkan kode', style: TextStyle(fontSize: 12, color: Colors.black54)),
-                      const SizedBox(height: 16),
-                      _buildLabel('Secret Key (Base32)'),
-                      _buildTextField(controller: _secretKeyController, hint: 'JBSWY3DPEHPK3PXP'),
-                    ],
-                  ),
-                ),
+                  if (isA2fEnabled) ...[
+                    const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
+                    _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key (Base32)'),
+                  ],
+                ],
               ),
-            ],
+            ),
+            const SizedBox(height: 24),
+
+            SectionCard(
+              title: 'DATA OPSIONAL',
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: _selectDate,
+                      child: AbsorbPointer(child: _buildTextField(controller: _dobController, hint: 'Tgl Lahir', icon: Icons.calendar_today_outlined)),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildTextField(controller: _yearController, hint: 'Tahun Akun', keyboardType: TextInputType.number),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 40),
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF6C4DFF),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
                 ),
                 onPressed: _saveAccount,
-                child: Text(isEdit ? 'Perbarui Akun' : 'Simpan Akun', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                child: Text(isEdit ? 'Simpan Perubahan' : 'Tambahkan Akun', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
+            const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0, left: 4.0),
-      child: Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.black87)),
-    );
-  }
-
   Widget _buildTextField({required TextEditingController controller, required String hint, bool isPassword = false, bool isVisible = false, VoidCallback? onVisibilityToggle, IconData? icon, TextInputType keyboardType = TextInputType.text}) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(0.05)),
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.transparent),
       ),
       child: TextField(
         controller: controller,
         obscureText: isPassword && !isVisible,
         keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: Colors.black87),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Colors.black38),
+          hintStyle: const TextStyle(color: Colors.black38, fontSize: 14, fontWeight: FontWeight.normal),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          prefixIcon: icon != null ? Icon(icon, color: Colors.black38) : null,
+          prefixIcon: icon != null ? Icon(icon, color: Colors.black38, size: 20) : null,
           suffixIcon: isPassword
-              ? IconButton(
-                  icon: Icon(isVisible ? Icons.visibility : Icons.visibility_off, color: Colors.black38),
-                  onPressed: onVisibilityToggle,
-                )
+              ? IconButton(icon: Icon(isVisible ? Icons.visibility : Icons.visibility_off, color: Colors.black38, size: 20), onPressed: onVisibilityToggle)
               : null,
         ),
       ),
@@ -601,7 +579,6 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
 // --- SCREEN 3: ACCOUNT DETAIL ---
 class AccountDetailScreen extends StatefulWidget {
   final Map<String, dynamic> account;
-
   const AccountDetailScreen({Key? key, required this.account}) : super(key: key);
 
   @override
@@ -639,14 +616,7 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
 
   void _generateTotp() {
     try {
-      final String code = OTP.generateTOTPCodeString(
-        currentAccount['secret_key'],
-        DateTime.now().millisecondsSinceEpoch,
-        length: 6,
-        interval: 30,
-        algorithm: Algorithm.SHA1,
-        isGoogle: true,
-      );
+      final String code = OTP.generateTOTPCodeString(currentAccount['secret_key'], DateTime.now().millisecondsSinceEpoch, length: 6, interval: 30, algorithm: Algorithm.SHA1, isGoogle: true);
       if (mounted) setState(() { _currentTotp = code; });
     } catch (e) {
       if (mounted) setState(() { _currentTotp = 'ERROR'; });
@@ -668,7 +638,7 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
 
   void _copyToClipboard(String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label berhasil disalin')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label berhasil disalin', style: const TextStyle(fontWeight: FontWeight.w500))));
   }
 
   @override
@@ -677,22 +647,15 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20),
-          onPressed: () => Navigator.pop(context, true),
-        ),
-        title: Text(currentAccount['name'], style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w600)),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context, true)),
+        title: Text(currentAccount['name'], style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
         centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.edit, color: Color(0xFF6C4DFF)),
+            icon: const Icon(Icons.edit_outlined, color: Color(0xFF6C4DFF)),
             onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => AccountFormScreen(account: currentAccount)),
-              );
+              final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AccountFormScreen(account: currentAccount)));
               if (result == true) {
-                // Fetch updated data using search/query
                 final updatedData = await DatabaseHelper.instance.fetchAllAccounts();
                 final updatedAccount = updatedData.firstWhere((element) => element['id'] == currentAccount['id']);
                 setState(() {
@@ -709,74 +672,78 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            GlassCard(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Detail Kredensial', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    const SizedBox(height: 16),
-                    _buildDetailRow('Username / Email', currentAccount['identifier']),
-                    const Divider(height: 30),
-                    _buildPasswordRow('Password', currentAccount['password']),
-                    if (currentAccount['dob'] != null && currentAccount['dob'].toString().isNotEmpty) ...[
-                      const Divider(height: 30),
-                      _buildDetailRow('Tanggal Lahir', currentAccount['dob']),
-                    ],
-                    if (currentAccount['account_year'] != null && currentAccount['account_year'].toString().isNotEmpty) ...[
-                      const Divider(height: 30),
-                      _buildDetailRow('Tahun Akun', currentAccount['account_year']),
-                    ],
-                  ],
-                ),
+            SectionCard(
+              title: 'KREDENSIAL UTAMA',
+              child: Column(
+                children: [
+                  _buildDetailRow('Username / Email', currentAccount['identifier']),
+                  const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
+                  _buildPasswordRow('Password', currentAccount['password']),
+                ],
               ),
             ),
             const SizedBox(height: 24),
 
+            if (currentAccount['dob'] != null && currentAccount['dob'].toString().isNotEmpty || 
+                currentAccount['account_year'] != null && currentAccount['account_year'].toString().isNotEmpty) ...[
+              SectionCard(
+                title: 'INFORMASI TAMBAHAN',
+                child: Column(
+                  children: [
+                    if (currentAccount['dob'] != null && currentAccount['dob'].toString().isNotEmpty) ...[
+                      _buildDetailRow('Tanggal Lahir', currentAccount['dob']),
+                    ],
+                    if (currentAccount['account_year'] != null && currentAccount['account_year'].toString().isNotEmpty) ...[
+                      if (currentAccount['dob'] != null && currentAccount['dob'].toString().isNotEmpty)
+                        const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
+                      _buildDetailRow('Tahun Pembuatan Akun', currentAccount['account_year']),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
+
             if (currentAccount['a2f'] == 1) ...[
-              const Text('Autentikasi Dua Faktor', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
-              const SizedBox(height: 16),
-              GlassCard(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            SizedBox(
-                              width: 80,
-                              height: 80,
-                              child: CircularProgressIndicator(
-                                value: _secondsRemaining / 30,
-                                strokeWidth: 6,
-                                backgroundColor: Colors.black.withOpacity(0.05),
-                                color: const Color(0xFF6C4DFF),
-                              ),
+              SectionCard(
+                title: 'KODE AUTENTIKASI',
+                child: Center(
+                  child: Column(
+                    children: [
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox(
+                            width: 70,
+                            height: 70,
+                            child: CircularProgressIndicator(
+                              value: _secondsRemaining / 30,
+                              strokeWidth: 5,
+                              backgroundColor: Colors.black.withOpacity(0.04),
+                              color: const Color(0xFF6C4DFF),
                             ),
-                            Text('${_secondsRemaining}s', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6C4DFF), fontSize: 16)),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        Text(
-                          _currentTotp.padLeft(6, '0').replaceAllMapped(RegExp(r".{3}"), (match) => "${match.group(0)} "),
-                          style: const TextStyle(fontSize: 40, letterSpacing: 4, fontWeight: FontWeight.bold, color: Color(0xFF6C4DFF)),
-                        ),
-                        const SizedBox(height: 16),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF6C4DFF),
-                            side: const BorderSide(color: Color(0xFF6C4DFF)),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          icon: const Icon(Icons.copy, size: 18),
-                          label: const Text('Salin Token'),
-                          onPressed: () => _copyToClipboard(_currentTotp, 'Token'),
-                        )
-                      ],
-                    ),
+                          Text('${_secondsRemaining}s', style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF6C4DFF), fontSize: 16)),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        _currentTotp.padLeft(6, '0').replaceAllMapped(RegExp(r".{3}"), (match) => "${match.group(0)} "),
+                        style: const TextStyle(fontSize: 42, letterSpacing: 6, fontWeight: FontWeight.w800, color: Color(0xFF6C4DFF)),
+                      ),
+                      const SizedBox(height: 20),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6C4DFF),
+                          side: const BorderSide(color: Color(0xFF6C4DFF), width: 1.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        ),
+                        icon: const Icon(Icons.copy, size: 18),
+                        label: const Text('Salin Token', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: () => _copyToClipboard(_currentTotp, 'Token'),
+                      )
+                    ],
                   ),
                 ),
               ),
@@ -787,20 +754,21 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.redAccent.withOpacity(0.1),
-                  foregroundColor: Colors.redAccent,
+                  backgroundColor: const Color(0xFFFFF0F0),
+                  foregroundColor: const Color(0xFFE53935),
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   elevation: 0,
                 ),
                 icon: const Icon(Icons.delete_outline),
-                label: const Text('Hapus Akun', style: TextStyle(fontWeight: FontWeight.bold)),
+                label: const Text('Hapus Akun secara Permanen', style: TextStyle(fontWeight: FontWeight.bold)),
                 onPressed: () async {
                   await DatabaseHelper.instance.deleteAccount(currentAccount['id']);
                   if (mounted) Navigator.pop(context, true);
                 },
               ),
             ),
+            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -811,17 +779,21 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-            const SizedBox(height: 4),
-            Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-          ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
+            ],
+          ),
         ),
         IconButton(
-          icon: const Icon(Icons.copy, size: 20, color: Colors.black38),
+          icon: const Icon(Icons.copy_rounded, size: 20, color: Colors.black38),
           onPressed: () => _copyToClipboard(value, label),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
         )
       ],
     );
@@ -831,64 +803,36 @@ class _AccountDetailScreenState extends State<AccountDetailScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-            const SizedBox(height: 4),
-            Text(
-              _isPasswordVisible ? value : '••••••••••••',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            ),
-          ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                _isPasswordVisible ? value : '••••••••••••',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87),
+              ),
+            ],
+          ),
         ),
         Row(
           children: [
             IconButton(
               icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off, size: 20, color: Colors.black38),
-              onPressed: () {
-                setState(() { _isPasswordVisible = !_isPasswordVisible; });
-              },
+              onPressed: () => setState(() { _isPasswordVisible = !_isPasswordVisible; }),
+              padding: const EdgeInsets.only(right: 12),
+              constraints: const BoxConstraints(),
             ),
             IconButton(
-              icon: const Icon(Icons.copy, size: 20, color: Colors.black38),
+              icon: const Icon(Icons.copy_rounded, size: 20, color: Colors.black38),
               onPressed: () => _copyToClipboard(value, label),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
           ],
         )
       ],
-    );
-  }
-}
-
-// --- KOMPONEN REUSABLE: GLASS CARD ---
-class GlassCard extends StatelessWidget {
-  final Widget child;
-
-  const GlassCard({Key? key, required this.child}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.7),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.5)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: child,
-        ),
-      ),
     );
   }
 }
