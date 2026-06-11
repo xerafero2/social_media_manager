@@ -84,10 +84,9 @@ class DatabaseHelper {
     return await db.update('accounts', row, where: 'id = ?', whereArgs: [id]);
   }
 
-  // Method baru yang mendukung Pencarian dan Pengurutan secara dinamis
   Future<List<Map<String, dynamic>>> fetchAccounts({String query = '', String sortOption = 'terbaru'}) async {
     final db = await instance.database;
-    String orderBy = 'updated_at DESC'; // Default: Terbaru
+    String orderBy = 'updated_at DESC';
 
     if (sortOption == 'terlama') {
       orderBy = 'updated_at ASC';
@@ -128,7 +127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _sortOption = 'terbaru'; // Opsi: 'terbaru', 'terlama', 'a-z'
+  String _sortOption = 'terbaru';
 
   @override
   void initState() {
@@ -272,9 +271,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   position: PopupMenuPosition.under,
                   onSelected: (value) {
-                    setState(() {
-                      _sortOption = value;
-                    });
+                    setState(() { _sortOption = value; });
                     _refreshAccounts();
                   },
                   itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
@@ -348,13 +345,24 @@ class _AccountCardState extends State<AccountCard> {
     }
   }
 
-  IconData _getPlatformIcon(String name) {
+  IconData _getPlatformIconFallback(String name) {
     final lower = name.toLowerCase();
     if (lower.contains('fb') || lower.contains('facebook')) return Icons.facebook;
     if (lower.contains('ig') || lower.contains('instagram')) return Icons.camera_alt;
     if (lower.contains('google')) return Icons.g_mobiledata;
     if (lower.contains('x') || lower.contains('twitter') || lower.contains('tt')) return Icons.close;
     return Icons.public;
+  }
+
+  Widget _buildPlatformIcon(String? iconPath, String name, double size) {
+    if (iconPath != null && iconPath.isNotEmpty) {
+      if (iconPath.startsWith('assets/')) {
+        return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.asset(iconPath, width: size, height: size, fit: BoxFit.cover));
+      } else {
+        return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.file(File(iconPath), width: size, height: size, fit: BoxFit.cover));
+      }
+    }
+    return Icon(_getPlatformIconFallback(name), color: Colors.black54, size: size * 0.8);
   }
 
   String _formatDate(String? isoString) {
@@ -389,13 +397,13 @@ class _AccountCardState extends State<AccountCard> {
                 ],
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: const Color(0xFF1877F2), borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: const Color(0xFFF8F9FA), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black12)),
                   child: Row(
                     children: [
-                      Icon(_getPlatformIcon(acc['name']), color: Colors.white, size: 14),
-                      const SizedBox(width: 4),
-                      Text(acc['name'].toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      _buildPlatformIcon(acc['custom_icon_path'], acc['name'], 16),
+                      const SizedBox(width: 6),
+                      Text(acc['name'].toUpperCase(), style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 )
@@ -611,6 +619,7 @@ class AccountFormScreen extends StatefulWidget {
 class _AccountFormScreenState extends State<AccountFormScreen> {
   bool isA2fEnabled = false;
   bool isPasswordVisible = false;
+  String? selectedIconPath;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _identifierController = TextEditingController();
@@ -619,6 +628,16 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   final TextEditingController _dobController = TextEditingController();
   final TextEditingController _yearController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
+
+  final List<String> _builtInIcons = [
+    'assets/icons/facebook.png',
+    'assets/icons/instagram.png',
+    'assets/icons/google.png',
+    'assets/icons/x.png',
+    'assets/icons/tiktok.png',
+  ];
+
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -632,7 +651,13 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       _dobController.text = widget.account!['dob'] ?? '';
       _yearController.text = widget.account!['account_year'] ?? '';
       _tagsController.text = widget.account!['tags'] ?? '';
+      selectedIconPath = widget.account!['custom_icon_path'];
     }
+  }
+
+  Future<void> _pickImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) setState(() { selectedIconPath = image.path; });
   }
 
   Future<void> _saveAccount() async {
@@ -653,6 +678,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       'a2f': isA2fEnabled ? 1 : 0,
       'secret_key': isA2fEnabled ? secretKey : null,
       'updated_at': DateTime.now().toIso8601String(),
+      'custom_icon_path': selectedIconPath,
       'dob': _dobController.text.trim(),
       'account_year': _yearController.text.trim(),
       'tags': _tagsController.text.trim(),
@@ -665,6 +691,17 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       await DatabaseHelper.instance.updateAccount(row);
     }
     if (mounted) Navigator.pop(context, true);
+  }
+
+  Widget _buildIconPreview() {
+    if (selectedIconPath != null && selectedIconPath!.isNotEmpty) {
+      if (selectedIconPath!.startsWith('assets/')) {
+        return Image.asset(selectedIconPath!, fit: BoxFit.cover);
+      } else {
+        return Image.file(File(selectedIconPath!), fit: BoxFit.cover);
+      }
+    }
+    return const Icon(Icons.public, size: 36, color: Color(0xFF1E40AF));
   }
 
   @override
@@ -682,6 +719,60 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
         child: Column(
           children: [
+            Center(
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+                  border: Border.all(color: Colors.black.withOpacity(0.05)),
+                ),
+                clipBehavior: Clip.hardEdge,
+                child: _buildIconPreview(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 50,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 12),
+                      width: 50,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8F9FA),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.black12, style: BorderStyle.solid),
+                      ),
+                      child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
+                    ),
+                  ),
+                  ..._builtInIcons.map((path) => GestureDetector(
+                    onTap: () => setState(() { selectedIconPath = path; }),
+                    child: Container(
+                      margin: const EdgeInsets.only(right: 12),
+                      padding: const EdgeInsets.all(6),
+                      width: 50,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selectedIconPath == path ? const Color(0xFF1E40AF) : Colors.black12,
+                          width: selectedIconPath == path ? 2 : 1,
+                        ),
+                      ),
+                      child: Image.asset(path),
+                    ),
+                  )).toList()
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
             _buildTextField(controller: _nameController, hint: 'Singkatan / Platform (Cth: FB, IG)', icon: Icons.public),
             const SizedBox(height: 16),
             _buildTextField(controller: _identifierController, hint: 'Email atau Username', icon: Icons.person_outline),
