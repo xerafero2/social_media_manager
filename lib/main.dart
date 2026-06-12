@@ -45,7 +45,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('account_manager_v5.db'); // Upgrade ke v5 untuk kolom created_at
+    _database = await _initDB('account_manager_v5.db'); // Upgrade ke v5 untuk created_at
     return _database!;
   }
 
@@ -193,7 +193,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         itemBuilder: (context, index) {
                           final acc = _accounts[index];
                           return AccountCard(
-                            key: ValueKey('card_${acc['id']}_${acc['updated_at']}'),
+                            key: ValueKey('card_${acc['id']}_${acc['name']}_${acc['identifier']}_${acc['password']}_${acc['custom_icon_path']}_${acc['tags']}_${acc['updated_at']}_${acc['created_at']}'),
                             account: acc,
                             index: index + 1,
                             secondsRemaining: _secondsRemaining,
@@ -234,34 +234,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
-                children: [
-                  Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
-                  SizedBox(width: 10),
-                  Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
-                ],
-              ),
-              // Menampilkan jumlah total akun terdaftar secara bersih
+              const Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
+              const SizedBox(width: 10),
+              const Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+              const Spacer(),
+              // Menampilkan jumlah akun dinamis pada bagian pojok kanan atas header
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E40AF).withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${_accounts.length} Akun',
-                  style: const TextStyle(color: Color(0xFF1E40AF), fontWeight: FontWeight.bold, fontSize: 13),
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: const Color(0xFF1E40AF).withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: Text('Total: ${_accounts.length}', style: const TextStyle(color: Color(0xFF1E40AF), fontWeight: FontWeight.bold, fontSize: 12)),
               ),
             ],
           ),
-          const SizedBox(height: 6),
-          const Text('Kelola semua akun sosial media Anda', style: TextStyle(fontSize: 13, color: Colors.black45)),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -399,7 +386,7 @@ class _AccountCardState extends State<AccountCard> {
   }
 
   String _formatDate(String? isoString) {
-    if (isoString == null || isoString.isEmpty) return 'Tidak ada data';
+    if (isoString == null || isoString.isEmpty) return 'Tidak tersedia';
     return DateFormat('dd/MM/yyyy HH:mm:ss').format(DateTime.parse(isoString));
   }
 
@@ -473,8 +460,9 @@ class _AccountCardState extends State<AccountCard> {
                                 style: TextStyle(fontSize: 14, fontFamily: 'monospace', letterSpacing: _isPasswordVisible ? 0 : 2, color: Colors.black87),
                               ),
                             ),
+                            // Perbaikan Logika Ikon Mata: Jika password tidak terlihat, tampilkan mata digaris (visibility_off)
                             IconButton(
-                              icon: Icon(_isPasswordVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: Colors.black54),
+                              icon: Icon(_isPasswordVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: Colors.black54),
                               onPressed: () => setState(() { _isPasswordVisible = !_isPasswordVisible; }),
                               constraints: const BoxConstraints(),
                               padding: const EdgeInsets.all(8),
@@ -615,12 +603,12 @@ class _AccountCardState extends State<AccountCard> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                // Penyusunan log data kronologis yang rapi dan sejajar
+                // Menampilkan waktu pertama kali ditambahkan dan waktu update terakhir secara informatif
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Dibuat: ${_formatDate(acc['created_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38, fontWeight: FontWeight.w500)),
-                    Text('Update: ${_formatDate(acc['updated_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38, fontWeight: FontWeight.w500)),
+                    Text('Dibuat: ${_formatDate(acc['created_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
+                    Text('Update: ${_formatDate(acc['updated_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
                   ],
                 )
               ],
@@ -657,10 +645,10 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   bool isA2fEnabled = false;
   bool isPasswordVisible = false;
   String? selectedIconPath;
+  String? createdAt;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _identifierController = TextEditingController();
-  final TextEditingController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _secretKeyController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
@@ -690,6 +678,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       _yearController.text = widget.account!['account_year'] ?? '';
       _tagsController.text = widget.account!['tags'] ?? '';
       selectedIconPath = widget.account!['custom_icon_path'];
+      createdAt = widget.account!['created_at'];
     }
   }
 
@@ -709,18 +698,13 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       return;
     }
 
-    // Validasi Kunci Utama: Mencegah penyimpanan jika A2F aktif tetapi kode kosong
+    // Pengetatan Validasi A2F: Jika opsi A2F diaktifkan, Kunci Rahasia (Secret Key) tidak boleh kosong!
     if (isA2fEnabled && secretKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Secret Key 2FA tidak boleh kosong saat A2F diaktifkan!'),
-          backgroundColor: Color(0xFFDC2626),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal menyimpan! Secret Key tidak boleh kosong saat A2F aktif.')));
       return;
     }
 
-    final String currentTime = DateTime.now().toIso8601String();
+    final nowIso = DateTime.now().toIso8601String();
 
     final row = {
       'name': name,
@@ -728,7 +712,8 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       'password': password,
       'a2f': isA2fEnabled ? 1 : 0,
       'secret_key': isA2fEnabled ? secretKey : null,
-      'updated_at': currentTime,
+      'created_at': createdAt ?? nowIso, // Mempertahankan waktu buat jika dalam mode edit
+      'updated_at': nowIso,
       'custom_icon_path': selectedIconPath,
       'dob': _dobController.text.trim(),
       'account_year': _yearController.text.trim(),
@@ -736,13 +721,9 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     };
 
     if (widget.account == null) {
-      // Menyertakan data pembuatan awal untuk entri baru
-      row['created_at'] = currentTime;
       await DatabaseHelper.instance.insertAccount(row);
     } else {
-      // Mempertahankan data pembuatan awal yang sudah ada ketika mengedit data
       row['id'] = widget.account!['id'];
-      row['created_at'] = widget.account!['created_at'] ?? currentTime;
       await DatabaseHelper.instance.updateAccount(row);
     }
     if (mounted) Navigator.pop(context, true);
@@ -797,6 +778,20 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
+                    // Tombol Reset ke Default: Menghapus pilihan ikon kustom agar kembali kosong
+                    GestureDetector(
+                      onTap: () => setState(() { selectedIconPath = null; }),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        width: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: selectedIconPath == null ? const Color(0xFF1E40AF) : Colors.black12, width: selectedIconPath == null ? 2 : 1),
+                        ),
+                        child: const Icon(Icons.no_photography_outlined, color: Colors.black54, size: 20),
+                      ),
+                    ),
                     GestureDetector(
                       onTap: _pickImage,
                       child: Container(
@@ -814,14 +809,12 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                       onTap: () {
                         setState(() {
                           selectedIconPath = path;
-                          
                           String platformName = path.split('/').last.split('.').first;
                           if (platformName.toLowerCase() == 'x') {
                             platformName = 'X (Twitter)';
                           } else {
                             platformName = platformName[0].toUpperCase() + platformName.substring(1);
                           }
-                          
                           _nameController.text = platformName;
                         });
                       },
@@ -848,6 +841,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
               const SizedBox(height: 16),
               _buildTextField(controller: _identifierController, hint: 'Email atau Username', icon: Icons.person_outline),
               const SizedBox(height: 16),
+              // Perbaikan Logika Ikon Mata pada Form Pengisian: Sesuai kondisi kebenaran visual visibilitas
               _buildTextField(
                 controller: _passwordController,
                 hint: 'Password Akun',
@@ -922,7 +916,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           prefixIcon: icon != null ? Icon(icon, color: Colors.black38, size: 20) : null,
           suffixIcon: isPassword
-              ? IconButton(icon: Icon(isVisible ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.black38, size: 20), onPressed: onVisibilityToggle)
+              ? IconButton(icon: Icon(isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.black38, size: 20), onPressed: onVisibilityToggle)
               : null,
         ),
       ),
