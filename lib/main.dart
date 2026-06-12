@@ -164,45 +164,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildCleanHeader(),
-            Expanded(
-              child: _accounts.isEmpty
-                  ? Center(
-                      child: Text(
-                        _searchQuery.isEmpty ? 'Belum ada akun yang disimpan' : 'Tidak ada akun yang cocok',
-                        style: const TextStyle(color: Colors.black38, fontWeight: FontWeight.w500),
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(), // Unfocus ketika area di luar form ditekan
+      behavior: HitTestBehavior.translucent,
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildCleanHeader(),
+              Expanded(
+                child: _accounts.isEmpty
+                    ? Center(
+                        child: Text(
+                          _searchQuery.isEmpty ? 'Belum ada akun yang disimpan' : 'Tidak ada akun yang cocok',
+                          style: const TextStyle(color: Colors.black38, fontWeight: FontWeight.w500),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        itemCount: _accounts.length,
+                        itemBuilder: (context, index) {
+                          final acc = _accounts[index];
+                          return AccountCard(
+                            // Memaksa UI render ulang jika updated_at berubah (Penting untuk filter A-Z)
+                            key: ValueKey('${acc['id']}_${acc['updated_at']}'), 
+                            account: acc,
+                            index: index + 1,
+                            secondsRemaining: _secondsRemaining,
+                            onRefresh: _refreshAccounts,
+                          );
+                        },
                       ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      itemCount: _accounts.length,
-                      itemBuilder: (context, index) {
-                        return AccountCard(
-                          account: _accounts[index],
-                          index: index + 1,
-                          secondsRemaining: _secondsRemaining,
-                          onRefresh: _refreshAccounts,
-                        );
-                      },
-                    ),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: const Color(0xFF1E40AF),
-        foregroundColor: Colors.white,
-        elevation: 4,
-        icon: const Icon(Icons.add),
-        label: const Text('Tambah Akun', style: TextStyle(fontWeight: FontWeight.bold)),
-        onPressed: () async {
-          final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const AccountFormScreen()));
-          if (result == true) _refreshAccounts();
-        },
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: const Color(0xFF1E40AF),
+          foregroundColor: Colors.white,
+          elevation: 4,
+          icon: const Icon(Icons.add),
+          label: const Text('Tambah Akun', style: TextStyle(fontWeight: FontWeight.bold)),
+          onPressed: () async {
+            final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const AccountFormScreen()));
+            if (result == true) _refreshAccounts();
+          },
+        ),
       ),
     );
   }
@@ -222,11 +229,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
-              const SizedBox(width: 10),
-              const Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+              Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
+              SizedBox(width: 10),
+              Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
             ],
           ),
           const SizedBox(height: 20),
@@ -629,13 +636,14 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   final TextEditingController _yearController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
 
-  final List<String> _builtInIcons = [
-    'assets/icons/facebook.png',
-    'assets/icons/instagram.png',
-    'assets/icons/google.png',
-    'assets/icons/x.png',
-    'assets/icons/tiktok.png',
-  ];
+  // Map Ikon Bawaan (Nama Platform -> Path) untuk Fitur Auto-fill
+  final Map<String, String> _builtInIconsMap = {
+    'Facebook': 'assets/icons/facebook.png',
+    'Instagram': 'assets/icons/instagram.png',
+    'Google': 'assets/icons/google.png',
+    'X (Twitter)': 'assets/icons/x.png',
+    'TikTok': 'assets/icons/tiktok.png',
+  };
 
   final ImagePicker _picker = ImagePicker();
 
@@ -707,129 +715,139 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.account != null;
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.close, color: Colors.black87), onPressed: () => Navigator.pop(context)),
-        title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-        child: Column(
-          children: [
-            Center(
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
-                  border: Border.all(color: Colors.black.withOpacity(0.05)),
-                ),
-                clipBehavior: Clip.hardEdge,
-                child: _buildIconPreview(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 50,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  GestureDetector(
-                    onTap: _pickImage,
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 12),
-                      width: 50,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8F9FA),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.black12, style: BorderStyle.solid),
-                      ),
-                      child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
-                    ),
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(), // Unfocus form
+      behavior: HitTestBehavior.translucent,
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.close, color: Colors.black87), onPressed: () => Navigator.pop(context)),
+          title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
+          centerTitle: true,
+        ),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+          child: Column(
+            children: [
+              Center(
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+                    border: Border.all(color: Colors.black.withOpacity(0.05)),
                   ),
-                  ..._builtInIcons.map((path) => GestureDetector(
-                    onTap: () => setState(() { selectedIconPath = path; }),
-                    child: Container(
-                      margin: const EdgeInsets.only(right: 12),
-                      padding: const EdgeInsets.all(6),
-                      width: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: selectedIconPath == path ? const Color(0xFF1E40AF) : Colors.black12,
-                          width: selectedIconPath == path ? 2 : 1,
+                  clipBehavior: Clip.hardEdge,
+                  child: _buildIconPreview(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 50,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    GestureDetector(
+                      onTap: _pickImage,
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        width: 50,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.black12, style: BorderStyle.solid),
                         ),
+                        child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
                       ),
-                      child: Image.asset(path),
                     ),
-                  )).toList()
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            _buildTextField(controller: _nameController, hint: 'Singkatan / Platform (Cth: FB, IG)', icon: Icons.public),
-            const SizedBox(height: 16),
-            _buildTextField(controller: _identifierController, hint: 'Email atau Username', icon: Icons.person_outline),
-            const SizedBox(height: 16),
-            _buildTextField(
-              controller: _passwordController,
-              hint: 'Password Akun',
-              icon: Icons.lock_outline,
-              isPassword: true,
-              isVisible: isPasswordVisible,
-              onVisibilityToggle: () => setState(() { isPasswordVisible = !isPasswordVisible; }),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(child: _buildTextField(controller: _dobController, hint: 'Tgl Lahir (Cth: 10 Okt 1980)')),
-                const SizedBox(width: 12),
-                Expanded(child: _buildTextField(controller: _yearController, hint: 'Tahun Buat', keyboardType: TextInputType.number)),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildTextField(controller: _tagsController, hint: 'Kategori / Game (pisahkan koma)', icon: Icons.sports_esports_outlined),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.05))),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Aktifkan 2-Factor Code', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
-                      Switch(value: isA2fEnabled, activeColor: const Color(0xFF1E40AF), onChanged: (val) => setState(() { isA2fEnabled = val; })),
-                    ],
-                  ),
-                  if (isA2fEnabled) ...[
-                    const Divider(height: 24),
-                    _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
-                  ]
-                ],
-              ),
-            ),
-            const SizedBox(height: 40),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E40AF),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ..._builtInIconsMap.entries.map((entry) => GestureDetector(
+                      onTap: () {
+                        setState(() { 
+                          selectedIconPath = entry.value; 
+                          // Auto-fill nama platform yang dipilih
+                          _nameController.text = entry.key; 
+                        });
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.all(6),
+                        width: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selectedIconPath == entry.value ? const Color(0xFF1E40AF) : Colors.black12,
+                            width: selectedIconPath == entry.value ? 2 : 1,
+                          ),
+                        ),
+                        child: Image.asset(entry.value),
+                      ),
+                    )).toList()
+                  ],
                 ),
-                onPressed: _saveAccount,
-                child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              _buildTextField(controller: _nameController, hint: 'Singkatan / Platform (Cth: FB, IG)', icon: Icons.public),
+              const SizedBox(height: 16),
+              _buildTextField(controller: _identifierController, hint: 'Email atau Username', icon: Icons.person_outline),
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: _passwordController,
+                hint: 'Password Akun',
+                icon: Icons.lock_outline,
+                isPassword: true,
+                isVisible: isPasswordVisible,
+                onVisibilityToggle: () => setState(() { isPasswordVisible = !isPasswordVisible; }),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(child: _buildTextField(controller: _dobController, hint: 'Tgl Lahir (Cth: 10 Okt 1980)')),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildTextField(controller: _yearController, hint: 'Tahun Buat', keyboardType: TextInputType.number)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildTextField(controller: _tagsController, hint: 'Kategori / Game (pisahkan koma)', icon: Icons.sports_esports_outlined),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.05))),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Aktifkan 2-Factor Code', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                        Switch(value: isA2fEnabled, activeColor: const Color(0xFF1E40AF), onChanged: (val) => setState(() { isA2fEnabled = val; })),
+                      ],
+                    ),
+                    if (isA2fEnabled) ...[
+                      const Divider(height: 24),
+                      _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
+                    ]
+                  ],
+                ),
+              ),
+              const SizedBox(height: 40),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E40AF),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _saveAccount,
+                  child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
