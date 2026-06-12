@@ -164,7 +164,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Membungkus Scaffold dengan GestureDetector untuk unfocus keyboard
     return GestureDetector(
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
@@ -186,8 +185,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         itemBuilder: (context, index) {
                           final acc = _accounts[index];
                           return AccountCard(
-                            // Menambahkan ValueKey berdasarkan ID dan waktu update agar real-time saat edit di mode Abjad
-                            key: ValueKey('${acc['id']}_${acc['updated_at']}'),
+                            // Menggunakan representasi string data objek secara utuh sebagai kunci pembaruan mutlak
+                            key: ValueKey(acc.toString()),
                             account: acc,
                             index: index + 1,
                             secondsRemaining: _secondsRemaining,
@@ -765,16 +764,12 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                       onTap: () {
                         setState(() {
                           selectedIconPath = path;
-                          
-                          // Mengekstrak nama file dan mengubahnya menjadi nama platform
                           String platformName = path.split('/').last.split('.').first;
                           if (platformName.toLowerCase() == 'x') {
                             platformName = 'X (Twitter)';
                           } else {
                             platformName = platformName[0].toUpperCase() + platformName.substring(1);
                           }
-                          
-                          // Mengisi secara otomatis form nama akun
                           _nameController.text = platformName;
                         });
                       },
@@ -830,31 +825,30 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                       children: [
                         const Text('Aktifkan 2-Factor Code', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
                         Switch(value: isA2fEnabled, activeColor: const Color(0xFF1E40AF), onChanged: (val) => setState(() { isA2fEnabled = val; })),
-                      ],
-                    ),
-                    if (isA2fEnabled) ...[
-                      const Divider(height: 24),
-                      _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
-                    ]
-                  ],
-                ),
-              ),
-              const SizedBox(height: 40),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E40AF),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ],
                   ),
-                  onPressed: _saveAccount,
-                  child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
+                  if (isA2fEnabled) ...[
+                    const Divider(height: 24),
+                    _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
+                  ]
+                ],
               ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 40),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E40AF),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: _saveAccount,
+                child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ],
         ),
       ),
     );
