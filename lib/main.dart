@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'; // Diperlukan untuk debugPrint
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:otp/otp.dart';
@@ -85,25 +86,29 @@ class DatabaseHelper {
   }
 
   Future<List<Map<String, dynamic>>> fetchAccounts({String query = '', String sortOption = 'terbaru'}) async {
-    final db = await instance.database;
-    String orderBy = 'updated_at DESC';
+    try {
+      final db = await instance.database;
+      String orderBy = 'updated_at DESC';
 
-    if (sortOption == 'terlama') {
-      orderBy = 'updated_at ASC';
-    } else if (sortOption == 'a-z') {
-      // PERBAIKAN: COLLATE NOCASE harus sebelum ASC
-      orderBy = 'name COLLATE NOCASE ASC';
-    }
+      if (sortOption == 'terlama') {
+        orderBy = 'updated_at ASC';
+      } else if (sortOption == 'a-z') {
+        orderBy = 'name COLLATE NOCASE ASC'; // Perbaikan Sintaks SQL
+      }
 
-    if (query.isEmpty) {
-      return await db.query('accounts', orderBy: orderBy);
-    } else {
-      return await db.query(
-        'accounts',
-        where: 'name LIKE ? OR identifier LIKE ? OR tags LIKE ?',
-        whereArgs: ['%$query%', '%$query%', '%$query%'],
-        orderBy: orderBy,
-      );
+      if (query.isEmpty) {
+        return await db.query('accounts', orderBy: orderBy);
+      } else {
+        return await db.query(
+          'accounts',
+          where: 'name LIKE ? OR identifier LIKE ? OR tags LIKE ?',
+          whereArgs: ['%$query%', '%$query%', '%$query%'],
+          orderBy: orderBy,
+        );
+      }
+    } catch (e) {
+      debugPrint('ERROR fetching accounts: $e');
+      return [];
     }
   }
 
@@ -165,7 +170,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Menghilangkan fokus input ketika menyentuh area kosong di luar Search Bar
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
@@ -188,7 +192,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         itemBuilder: (context, index) {
                           final acc = _accounts[index];
                           return AccountCard(
-                            // Solusi Kunci Utama: Menggabungkan seluruh data sensitif perubahan ke dalam ValueKey
                             key: ValueKey('card_${acc['id']}_${acc['name']}_${acc['identifier']}_${acc['password']}_${acc['custom_icon_path']}_${acc['tags']}_${acc['updated_at']}'),
                             account: acc,
                             index: index + 1,
@@ -716,7 +719,6 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.account != null;
-    // Menghilangkan fokus input di halaman form ketika menyentuh area luar
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
