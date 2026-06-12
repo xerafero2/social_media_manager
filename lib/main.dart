@@ -3,7 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart'; // Diperlukan untuk debugPrint
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:otp/otp.dart';
@@ -45,7 +45,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('account_manager_v4.db');
+    _database = await _initDB('account_manager_v5.db'); // Upgrade ke v5 untuk kolom created_at
     return _database!;
   }
 
@@ -65,6 +65,7 @@ class DatabaseHelper {
         password TEXT NOT NULL,
         a2f INTEGER NOT NULL,
         secret_key TEXT,
+        created_at TEXT,
         updated_at TEXT,
         custom_icon_path TEXT,
         dob TEXT,
@@ -93,7 +94,7 @@ class DatabaseHelper {
       if (sortOption == 'terlama') {
         orderBy = 'updated_at ASC';
       } else if (sortOption == 'a-z') {
-        orderBy = 'name COLLATE NOCASE ASC'; // Perbaikan Sintaks SQL
+        orderBy = 'name COLLATE NOCASE ASC';
       }
 
       if (query.isEmpty) {
@@ -192,7 +193,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         itemBuilder: (context, index) {
                           final acc = _accounts[index];
                           return AccountCard(
-                            key: ValueKey('card_${acc['id']}_${acc['name']}_${acc['identifier']}_${acc['password']}_${acc['custom_icon_path']}_${acc['tags']}_${acc['updated_at']}'),
+                            key: ValueKey('card_${acc['id']}_${acc['updated_at']}'),
                             account: acc,
                             index: index + 1,
                             secondsRemaining: _secondsRemaining,
@@ -233,14 +234,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
-              SizedBox(width: 10),
-              Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+              const Row(
+                children: [
+                  Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
+                  SizedBox(width: 10),
+                  Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+                ],
+              ),
+              // Menampilkan jumlah total akun terdaftar secara bersih
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E40AF).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${_accounts.length} Akun',
+                  style: const TextStyle(color: Color(0xFF1E40AF), fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ),
             ],
           ),
+          const SizedBox(height: 6),
+          const Text('Kelola semua akun sosial media Anda', style: TextStyle(fontSize: 13, color: Colors.black45)),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -378,7 +399,7 @@ class _AccountCardState extends State<AccountCard> {
   }
 
   String _formatDate(String? isoString) {
-    if (isoString == null || isoString.isEmpty) return '';
+    if (isoString == null || isoString.isEmpty) return 'Tidak ada data';
     return DateFormat('dd/MM/yyyy HH:mm:ss').format(DateTime.parse(isoString));
   }
 
@@ -594,9 +615,13 @@ class _AccountCardState extends State<AccountCard> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text('Update: ${_formatDate(acc['updated_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
+                // Penyusunan log data kronologis yang rapi dan sejajar
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Dibuat: ${_formatDate(acc['created_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38, fontWeight: FontWeight.w500)),
+                    Text('Update: ${_formatDate(acc['updated_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38, fontWeight: FontWeight.w500)),
+                  ],
                 )
               ],
             ),
@@ -635,6 +660,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _identifierController = TextEditingController();
+  final TextEditingController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _secretKeyController = TextEditingController();
   final TextEditingController _dobController = TextEditingController();
@@ -683,13 +709,26 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       return;
     }
 
+    // Validasi Kunci Utama: Mencegah penyimpanan jika A2F aktif tetapi kode kosong
+    if (isA2fEnabled && secretKey.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Secret Key 2FA tidak boleh kosong saat A2F diaktifkan!'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
+
+    final String currentTime = DateTime.now().toIso8601String();
+
     final row = {
       'name': name,
       'identifier': identifier,
       'password': password,
       'a2f': isA2fEnabled ? 1 : 0,
       'secret_key': isA2fEnabled ? secretKey : null,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': currentTime,
       'custom_icon_path': selectedIconPath,
       'dob': _dobController.text.trim(),
       'account_year': _yearController.text.trim(),
@@ -697,9 +736,13 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     };
 
     if (widget.account == null) {
+      // Menyertakan data pembuatan awal untuk entri baru
+      row['created_at'] = currentTime;
       await DatabaseHelper.instance.insertAccount(row);
     } else {
+      // Mempertahankan data pembuatan awal yang sudah ada ketika mengedit data
       row['id'] = widget.account!['id'];
+      row['created_at'] = widget.account!['created_at'] ?? currentTime;
       await DatabaseHelper.instance.updateAccount(row);
     }
     if (mounted) Navigator.pop(context, true);
