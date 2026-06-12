@@ -91,7 +91,8 @@ class DatabaseHelper {
     if (sortOption == 'terlama') {
       orderBy = 'updated_at ASC';
     } else if (sortOption == 'a-z') {
-      orderBy = 'name ASC COLLATE NOCASE';
+      // PERBAIKAN: COLLATE NOCASE harus sebelum ASC
+      orderBy = 'name COLLATE NOCASE ASC';
     }
 
     if (query.isEmpty) {
