@@ -164,9 +164,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Membungkus Scaffold dengan GestureDetector untuk unfocus keyboard
     return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(), // Unfocus ketika area di luar form ditekan
-      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         body: SafeArea(
           child: Column(
@@ -186,8 +186,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         itemBuilder: (context, index) {
                           final acc = _accounts[index];
                           return AccountCard(
-                            // Memaksa UI render ulang jika updated_at berubah (Penting untuk filter A-Z)
-                            key: ValueKey('${acc['id']}_${acc['updated_at']}'), 
+                            // Menambahkan ValueKey berdasarkan ID dan waktu update agar real-time saat edit di mode Abjad
+                            key: ValueKey('${acc['id']}_${acc['updated_at']}'),
                             account: acc,
                             index: index + 1,
                             secondsRemaining: _secondsRemaining,
@@ -229,11 +229,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
-              SizedBox(width: 10),
-              Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+              const Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
+              const SizedBox(width: 10),
+              const Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
             ],
           ),
           const SizedBox(height: 20),
@@ -636,14 +636,13 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   final TextEditingController _yearController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
 
-  // Map Ikon Bawaan (Nama Platform -> Path) untuk Fitur Auto-fill
-  final Map<String, String> _builtInIconsMap = {
-    'Facebook': 'assets/icons/facebook.png',
-    'Instagram': 'assets/icons/instagram.png',
-    'Google': 'assets/icons/google.png',
-    'X (Twitter)': 'assets/icons/x.png',
-    'TikTok': 'assets/icons/tiktok.png',
-  };
+  final List<String> _builtInIcons = [
+    'assets/icons/facebook.png',
+    'assets/icons/instagram.png',
+    'assets/icons/google.png',
+    'assets/icons/x.png',
+    'assets/icons/tiktok.png',
+  ];
 
   final ImagePicker _picker = ImagePicker();
 
@@ -716,8 +715,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   Widget build(BuildContext context) {
     final isEdit = widget.account != null;
     return GestureDetector(
-      onTap: () => FocusScope.of(context).unfocus(), // Unfocus form
-      behavior: HitTestBehavior.translucent,
+      onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: Colors.white,
@@ -763,12 +761,21 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                         child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
                       ),
                     ),
-                    ..._builtInIconsMap.entries.map((entry) => GestureDetector(
+                    ..._builtInIcons.map((path) => GestureDetector(
                       onTap: () {
-                        setState(() { 
-                          selectedIconPath = entry.value; 
-                          // Auto-fill nama platform yang dipilih
-                          _nameController.text = entry.key; 
+                        setState(() {
+                          selectedIconPath = path;
+                          
+                          // Mengekstrak nama file dan mengubahnya menjadi nama platform
+                          String platformName = path.split('/').last.split('.').first;
+                          if (platformName.toLowerCase() == 'x') {
+                            platformName = 'X (Twitter)';
+                          } else {
+                            platformName = platformName[0].toUpperCase() + platformName.substring(1);
+                          }
+                          
+                          // Mengisi secara otomatis form nama akun
+                          _nameController.text = platformName;
                         });
                       },
                       child: Container(
@@ -779,11 +786,11 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: selectedIconPath == entry.value ? const Color(0xFF1E40AF) : Colors.black12,
-                            width: selectedIconPath == entry.value ? 2 : 1,
+                            color: selectedIconPath == path ? const Color(0xFF1E40AF) : Colors.black12,
+                            width: selectedIconPath == path ? 2 : 1,
                           ),
                         ),
-                        child: Image.asset(entry.value),
+                        child: Image.asset(path),
                       ),
                     )).toList()
                   ],
