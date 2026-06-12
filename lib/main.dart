@@ -164,7 +164,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Menghilangkan fokus input ketika menyentuh area kosong di luar Search Bar
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         body: SafeArea(
@@ -185,8 +187,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         itemBuilder: (context, index) {
                           final acc = _accounts[index];
                           return AccountCard(
-                            // Menggunakan representasi string data objek secara utuh sebagai kunci pembaruan mutlak
-                            key: ValueKey(acc.toString()),
+                            // Solusi Kunci Utama: Menggabungkan seluruh data sensitif perubahan ke dalam ValueKey
+                            key: ValueKey('card_${acc['id']}_${acc['name']}_${acc['identifier']}_${acc['password']}_${acc['custom_icon_path']}_${acc['tags']}_${acc['updated_at']}'),
                             account: acc,
                             index: index + 1,
                             secondsRemaining: _secondsRemaining,
@@ -228,11 +230,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
       child: Column(
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
-              const SizedBox(width: 10),
-              const Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+              Icon(Icons.shield, color: Color(0xFF1E40AF), size: 30),
+              SizedBox(width: 10),
+              Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
             ],
           ),
           const SizedBox(height: 20),
@@ -713,7 +715,9 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.account != null;
+    // Menghilangkan fokus input di halaman form ketika menyentuh area luar
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         appBar: AppBar(
@@ -764,12 +768,14 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                       onTap: () {
                         setState(() {
                           selectedIconPath = path;
+                          
                           String platformName = path.split('/').last.split('.').first;
                           if (platformName.toLowerCase() == 'x') {
                             platformName = 'X (Twitter)';
                           } else {
                             platformName = platformName[0].toUpperCase() + platformName.substring(1);
                           }
+                          
                           _nameController.text = platformName;
                         });
                       },
@@ -825,30 +831,31 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                       children: [
                         const Text('Aktifkan 2-Factor Code', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
                         Switch(value: isA2fEnabled, activeColor: const Color(0xFF1E40AF), onChanged: (val) => setState(() { isA2fEnabled = val; })),
-                    ],
-                  ),
-                  if (isA2fEnabled) ...[
-                    const Divider(height: 24),
-                    _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
-                  ]
-                ],
-              ),
-            ),
-            const SizedBox(height: 40),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1E40AF),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ],
+                    ),
+                    if (isA2fEnabled) ...[
+                      const Divider(height: 24),
+                      _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
+                    ]
+                  ],
                 ),
-                onPressed: _saveAccount,
-                child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
-            ),
-          ],
+              const SizedBox(height: 40),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1E40AF),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: _saveAccount,
+                  child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
