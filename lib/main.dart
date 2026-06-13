@@ -1,7 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:ui';
 import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -12,11 +12,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:encrypt/encrypt.dart' as encrypt;
-import 'package:share_plus/share_plus.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart'; // <-- tambahkan
+import 'package:path_provider/path_provider.dart'; // untuk direktori sementara
 
-// --- THEME MANAGER ---
+// --- THEME MANAGER (tidak berubah) ---
 class ThemeManager {
   static final ValueNotifier<Color> appColor = ValueNotifier(const Color(0xFF1E40AF));
 
@@ -65,7 +64,7 @@ class SocialMediaManagerApp extends StatelessWidget {
   }
 }
 
-// --- DATABASE HELPER (DENGAN LOG PERUBAHAN & EXPORT/IMPORT) ---
+// --- DATABASE HELPER (diperbarui) ---
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
@@ -139,14 +138,13 @@ class DatabaseHelper {
   Future<int> updateAccount(Map<String, dynamic> row) async {
     final db = await instance.database;
     int id = row['id'];
+
     final oldData = await db.query('accounts', where: 'id = ?', whereArgs: [id]);
     if (oldData.isNotEmpty) {
       final oldRow = oldData.first;
       final now = DateTime.now().toIso8601String();
-      final fields = [
-        'name', 'identifier', 'password', 'a2f', 'secret_key',
-        'custom_icon_path', 'avatar_path', 'dob', 'account_year', 'tags'
-      ];
+      final fields = ['name', 'identifier', 'password', 'a2f', 'secret_key',
+                      'custom_icon_path', 'avatar_path', 'dob', 'account_year', 'tags'];
       for (var field in fields) {
         dynamic oldVal = oldRow[field];
         dynamic newVal = row[field];
@@ -163,6 +161,7 @@ class DatabaseHelper {
         }
       }
     }
+
     return await db.update('accounts', row, where: 'id = ?', whereArgs: [id]);
   }
 
@@ -170,11 +169,13 @@ class DatabaseHelper {
     try {
       final db = await instance.database;
       String orderBy = 'updated_at DESC';
+
       if (sortOption == 'terlama') {
         orderBy = 'updated_at ASC';
       } else if (sortOption == 'a-z') {
         orderBy = 'name COLLATE NOCASE ASC';
       }
+
       if (query.isEmpty) {
         return await db.query('accounts', orderBy: orderBy);
       } else {
@@ -199,11 +200,14 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getHistory(int accountId) async {
     final db = await instance.database;
     return await db.query('account_history',
-        where: 'account_id = ?', whereArgs: [accountId], orderBy: 'changed_at DESC');
+        where: 'account_id = ?',
+        whereArgs: [accountId],
+        orderBy: 'changed_at DESC');
   }
 
-  // --- EXPORT / IMPORT ---
+  // ========== EKSPOR ==========
 
+  // JSON (data lengkap: akun + riwayat)
   Future<String> exportToJson() async {
     final db = await instance.database;
     final accounts = await db.query('accounts');
@@ -214,32 +218,63 @@ class DatabaseHelper {
       'accounts': accounts,
       'history': history,
     };
-    return jsonEncode(backup);
+    return const JsonEncoder.withIndent('  ').convert(backup);
   }
 
+  // CSV (hanya akun, tanpa riwayat)
   Future<String> exportToCsv() async {
     final db = await instance.database;
     final accounts = await db.query('accounts');
     if (accounts.isEmpty) return '';
-    String csv = 'id,name,identifier,password,a2f,secret_key,created_at,updated_at,custom_icon_path,avatar_path,dob,account_year,tags\n';
-    String escape(dynamic val) {
-      String s = val?.toString() ?? '';
-      if (s.contains(',') || s.contains('"') || s.contains('\n')) {
-        s = '"${s.replaceAll('"', '""')}"';
-      }
-      return s;
+
+    final columns = [
+      'name', 'identifier', 'password', 'a2f', 'secret_key',
+      'created_at', 'updated_at', 'custom_icon_path', 'avatar_path',
+      'dob', 'account_year', 'tags'
+    ];
+    final buffer = StringBuffer();
+    buffer.writeln(columns.join(','));
+    for (var acc in accounts) {
+      final row = columns.map((col) {
+        final val = acc[col]?.toString() ?? '';
+        // escape koma dan petik
+        return '"${val.replaceAll('"', '""')}"';
+      }).join(',');
+      buffer.writeln(row);
     }
-    for (var row in accounts) {
-      csv += [
-        row['id'], row['name'], row['identifier'], row['password'],
-        row['a2f'], row['secret_key'], row['created_at'], row['updated_at'],
-        row['custom_icon_path'], row['avatar_path'], row['dob'],
-        row['account_year'], row['tags']
-      ].map(escape).join(',') + '\n';
-    }
-    return csv;
+    return buffer.toString();
   }
 
+  // Raw Text (mudah dibaca manusia)
+  Future<String> exportToRaw() async {
+    final db = await instance.database;
+    final accounts = await db.query('accounts');
+    if (accounts.isEmpty) return 'Tidak ada akun.';
+
+    final buffer = StringBuffer();
+    for (var acc in accounts) {
+      buffer.writeln('=== ${acc['name'] ?? 'AKUN'} ===');
+      buffer.writeln('Username/Email : ${acc['identifier']}');
+      buffer.writeln('Password       : ${acc['password']}');
+      buffer.writeln('2FA            : ${acc['a2f'] == 1 ? "Aktif" : "Tidak"}');
+      if (acc['a2f'] == 1) {
+        buffer.writeln('Secret Key     : ${acc['secret_key'] ?? '-'}');
+      }
+      buffer.writeln('Dibuat         : ${acc['created_at'] ?? '-'}');
+      buffer.writeln('Diperbarui     : ${acc['updated_at'] ?? '-'}');
+      buffer.writeln('Tgl Lahir      : ${acc['dob'] ?? '-'}');
+      buffer.writeln('Tahun Akun     : ${acc['account_year'] ?? '-'}');
+      buffer.writeln('Tag            : ${acc['tags'] ?? '-'}');
+      buffer.writeln('Avatar Path    : ${acc['avatar_path'] ?? '-'}');
+      buffer.writeln('Ikon Path      : ${acc['custom_icon_path'] ?? '-'}');
+      buffer.writeln('');
+    }
+    return buffer.toString();
+  }
+
+  // ========== IMPOR ==========
+
+  // Impor dari string JSON (bisa terenkripsi)
   Future<int> importFromJson(String jsonString, {bool isEncrypted = false, String password = ''}) async {
     if (isEncrypted) {
       jsonString = decryptAes(jsonString, password);
@@ -249,6 +284,7 @@ class DatabaseHelper {
     final List history = backup['history'] ?? [];
     final db = await instance.database;
 
+    // Hapus semua data sebelum impor
     await db.delete('accounts');
     await db.delete('account_history');
 
@@ -261,15 +297,13 @@ class DatabaseHelper {
     return accounts.length + history.length;
   }
 
+  // Impor dari CSV string
   Future<int> importFromCsv(String csvString) async {
-    final lines = csvString.trim().split('\n');
+    final lines = csvString.split('\n');
     if (lines.length < 2) return 0;
-    final header = lines[0].split(',');
-    final requiredFields = ['identifier', 'password'];
-    for (var f in requiredFields) {
-      if (!header.contains(f)) throw Exception('Kolom $f wajib ada di CSV');
-    }
+    final headers = lines[0].split(',').map((e) => e.trim().replaceAll('"', '')).toList();
     final db = await instance.database;
+    // Tidak hapus data lama, hanya tambah? Atau opsional? Kita buat replace: hapus lalu impor.
     await db.delete('accounts');
     await db.delete('account_history');
 
@@ -277,40 +311,48 @@ class DatabaseHelper {
     for (int i = 1; i < lines.length; i++) {
       if (lines[i].trim().isEmpty) continue;
       final values = _parseCsvLine(lines[i]);
-      if (values.length != header.length) continue;
-      final row = <String, dynamic>{};
-      for (int j = 0; j < header.length; j++) {
-        row[header[j].trim()] = values[j].trim();
+      if (values.length != headers.length) continue;
+
+      final Map<String, dynamic> row = {};
+      for (int j = 0; j < headers.length; j++) {
+        row[headers[j]] = values[j];
       }
-      if (row['identifier'].toString().isEmpty || row['password'].toString().isEmpty) continue;
+      // Konversi a2f ke integer
       row['a2f'] = int.tryParse(row['a2f']?.toString() ?? '0') ?? 0;
-      row['id'] = null;
+      // Pastikan id tidak diimpor (otomatis)
+      row.remove('id');
       await db.insert('accounts', row);
       count++;
     }
     return count;
   }
 
+  // Helper sederhana untuk parse CSV dengan kutip
   List<String> _parseCsvLine(String line) {
-    List<String> result = [];
+    final result = <String>[];
     bool inQuotes = false;
-    String current = '';
+    StringBuffer current = StringBuffer();
     for (int i = 0; i < line.length; i++) {
-      String c = line[i];
-      if (c == '"') {
-        inQuotes = !inQuotes;
-      } else if (c == ',' && !inQuotes) {
-        result.add(current.trim());
-        current = '';
+      final ch = line[i];
+      if (ch == '"') {
+        if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+          current.write('"');
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch == ',' && !inQuotes) {
+        result.add(current.toString().trim());
+        current = StringBuffer();
       } else {
-        current += c;
+        current.write(ch);
       }
     }
-    result.add(current.trim());
+    result.add(current.toString().trim());
     return result;
   }
 
-  // Enkripsi / Dekripsi AES
+  // Enkripsi/dekripsi AES
   static String encryptAes(String plainText, String password) {
     final key = encrypt.Key.fromUtf8(password.padRight(32).substring(0, 32));
     final iv = encrypt.IV.fromLength(16);
@@ -329,7 +371,7 @@ class DatabaseHelper {
   }
 }
 
-// --- SCREEN 1: DASHBOARD ---
+// --- SCREEN 1: DASHBOARD (hampir tidak berubah, hanya sedikit perubahan di header tombol settings) ---
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
 
@@ -474,7 +516,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.color_lens_rounded, size: 22, color: Colors.black87),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(onRefresh: _refreshAccounts))),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(onRefresh: _refreshAccounts))).then((_) => _refreshAccounts()),
                   constraints: const BoxConstraints(),
                   padding: const EdgeInsets.all(10),
                 ),
@@ -568,7 +610,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// --- SCREEN: SETTINGS DENGAN EXPORT/IMPORT MULTI-FORMAT ---
+// --- SCREEN 1.5: SETTINGS (dengan menu backup/restore yang diperluas) ---
 class SettingsScreen extends StatelessWidget {
   final VoidCallback? onRefresh;
   const SettingsScreen({Key? key, this.onRefresh}) : super(key: key);
@@ -615,14 +657,14 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 8),
           ListTile(
             leading: const Icon(Icons.backup_outlined),
-            title: const Text('Ekspor Backup'),
-            subtitle: const Text('Simpan sebagai file JSON, CSV, atau string terenkripsi'),
+            title: const Text('Ekspor / Backup'),
+            subtitle: const Text('Simpan data sebagai file atau salin string terenkripsi'),
             onTap: () => _showExportOptions(context),
           ),
           ListTile(
             leading: const Icon(Icons.restore_outlined),
             title: const Text('Impor / Restore'),
-            subtitle: const Text('Dari file JSON, CSV, atau string terenkripsi'),
+            subtitle: const Text('Pulihkan data dari file atau tempel string'),
             onTap: () => _showImportOptions(context),
           ),
         ],
@@ -630,220 +672,283 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  // --- EKSPOR ---
-
+  // ======== EKSPOR ========
   void _showExportOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.description_outlined),
-              title: const Text('Ekspor sebagai JSON (mentah)'),
-              onTap: () => _exportAsFile(context, 'json'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.table_chart_outlined),
-              title: const Text('Ekspor sebagai CSV'),
-              onTap: () => _exportAsFile(context, 'csv'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.lock_outline),
-              title: const Text('Ekspor JSON terenkripsi (file .enc)'),
-              onTap: () => _exportEncryptedFile(context),
-            ),
-            ListTile(
-              leading: const Icon(Icons.copy_outlined),
-              title: const Text('Salin string terenkripsi ke clipboard'),
-              onTap: () => _exportEncryptedClipboard(context),
-            ),
-          ],
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Pilih Format Ekspor', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.code),
+                title: const Text('JSON (data lengkap)'),
+                subtitle: const Text('Termasuk riwayat perubahan'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _exportToFile(context, 'json');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_chart),
+                title: const Text('CSV'),
+                subtitle: const Text('Hanya akun, bisa dibuka di Excel'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _exportToFile(context, 'csv');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.text_snippet),
+                title: const Text('Raw Text (.txt)'),
+                subtitle: const Text('Mudah dibaca manusia'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _exportToFile(context, 'raw');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.copy),
+                title: const Text('Salin String Terenkripsi'),
+                subtitle: const Text('Hanya untuk clipboard, perlu password'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _exportEncryptedClipboard(context);
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _exportAsFile(BuildContext context, String format) async {
-    String data;
-    String fileName;
-    String mimeType;
+  Future<void> _exportToFile(BuildContext context, String format) async {
+    // Minta password enkripsi (opsional)
+    final password = await _askPassword(context, 'Enkripsi file? (opsional)');
+    if (password == null) return; // user cancel
 
-    if (format == 'json') {
-      data = await DatabaseHelper.instance.exportToJson();
-      fileName = 'account_backup_${DateTime.now().millisecondsSinceEpoch}.json';
-      mimeType = 'application/json';
-    } else if (format == 'csv') {
-      data = await DatabaseHelper.instance.exportToCsv();
-      fileName = 'account_backup_${DateTime.now().millisecondsSinceEpoch}.csv';
-      mimeType = 'text/csv';
-    } else {
-      return;
+    String data;
+    String ext;
+    switch (format) {
+      case 'json':
+        data = await DatabaseHelper.instance.exportToJson();
+        ext = 'json';
+        break;
+      case 'csv':
+        data = await DatabaseHelper.instance.exportToCsv();
+        ext = 'csv';
+        break;
+      case 'raw':
+        data = await DatabaseHelper.instance.exportToRaw();
+        ext = 'txt';
+        break;
+      default:
+        return;
     }
 
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/$fileName');
-    await file.writeAsString(data);
-    await Share.shareXFiles([XFile(file.path, mimeType: mimeType)],
-        text: 'Backup akun');
-  }
+    if (password.isNotEmpty) {
+      data = DatabaseHelper.encryptAes(data, password);
+    }
 
-  Future<void> _exportEncryptedFile(BuildContext context) async {
-    final passwordController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Password Enkripsi'),
-        content: TextField(
-          controller: passwordController,
-          obscureText: true,
-          decoration: const InputDecoration(hintText: 'Masukkan password'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              if (passwordController.text.isEmpty) return;
-              final jsonString = await DatabaseHelper.instance.exportToJson();
-              final encrypted = DatabaseHelper.encryptAes(jsonString, passwordController.text);
-              final fileName = 'account_backup_${DateTime.now().millisecondsSinceEpoch}.enc';
-              final dir = await getTemporaryDirectory();
-              final file = File('${dir.path}/$fileName');
-              await file.writeAsString(encrypted);
-              await Share.shareXFiles([XFile(file.path, mimeType: 'application/octet-stream')],
-                  text: 'Backup akun (terenkripsi)');
-              Navigator.pop(ctx);
-            },
-            child: const Text('Ekspor'),
-          ),
-        ],
-      ),
+    // Simpan file menggunakan file_picker (saveFile)
+    String? outputPath = await FilePicker.platform.saveFile(
+      dialogTitle: 'Simpan file backup',
+      fileName: 'backup_accounts_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.$ext',
+      type: FileType.custom,
+      allowedExtensions: [ext],
     );
+
+    if (outputPath != null) {
+      try {
+        await File(outputPath).writeAsString(data);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('File berhasil disimpan ke $outputPath')),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Gagal menyimpan file: $e')),
+          );
+        }
+      }
+    }
   }
 
-  void _exportEncryptedClipboard(BuildContext context) async {
+  Future<void> _exportEncryptedClipboard(BuildContext context) async {
     final jsonString = await DatabaseHelper.instance.exportToJson();
     final passwordController = TextEditingController();
-    showDialog(
+    final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Backup Terenkripsi'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Masukkan password untuk enkripsi:'),
-            TextField(
-              controller: passwordController,
-              obscureText: true,
-            ),
-          ],
+        title: const Text('Salin String Terenkripsi'),
+        content: TextField(
+          controller: passwordController,
+          decoration: const InputDecoration(hintText: 'Password enkripsi (wajib)'),
+          obscureText: true,
         ),
         actions: [
           TextButton(
-            onPressed: () {
-              if (passwordController.text.isNotEmpty) {
-                final encrypted = DatabaseHelper.encryptAes(jsonString, passwordController.text);
-                Clipboard.setData(ClipboardData(text: encrypted));
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('String terenkripsi disalin!')));
-                Navigator.pop(ctx);
-              }
-            },
-            child: const Text('Salin'),
+            onPressed: () => Navigator.pop(ctx, passwordController.text),
+            child: const Text('Enkripsi & Salin'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
           ),
         ],
       ),
     );
+
+    if (result != null && result.isNotEmpty) {
+      final encrypted = DatabaseHelper.encryptAes(jsonString, result);
+      await Clipboard.setData(ClipboardData(text: encrypted));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('String terenkripsi berhasil disalin ke clipboard')),
+        );
+      }
+    }
   }
 
-  // --- IMPOR ---
-
+  // ======== IMPOR ========
   void _showImportOptions(BuildContext context) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.file_open_outlined),
-              title: const Text('Impor dari file JSON'),
-              onTap: () => _importFromFile(context, 'json'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.file_open_outlined),
-              title: const Text('Impor dari file CSV'),
-              onTap: () => _importFromFile(context, 'csv'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.paste_outlined),
-              title: const Text('Tempel string terenkripsi'),
-              onTap: () => _importFromClipboard(context),
-            ),
-          ],
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Pilih Sumber Impor', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.file_open),
+                title: const Text('Impor dari File'),
+                subtitle: const Text('JSON atau CSV'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _importFromFile(context);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.paste),
+                title: const Text('Tempel dari Clipboard'),
+                subtitle: const Text('String terenkripsi atau JSON mentah'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _importFromClipboard(context);
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _importFromFile(BuildContext context, String format) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: format == 'json' ? FileType.custom : FileType.custom,
-      allowedExtensions: format == 'json' ? ['json', 'enc'] : ['csv'],
+  Future<void> _importFromFile(BuildContext context) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json', 'csv'],
     );
     if (result == null || result.files.isEmpty) return;
 
-    final filePath = result.files.single.path;
-    if (filePath == null) return;
+    final file = File(result.files.single.path!);
+    String content = await file.readAsString();
+    final ext = result.files.single.extension?.toLowerCase();
+
+    // Cek apakah terenkripsi (opsional minta password)
+    bool? isEncrypted = await _askEncryption(context);
+    if (isEncrypted == null) return;
 
     try {
-      final file = File(filePath);
-      String content = await file.readAsString();
-      int count;
-      if (format == 'json') {
-        // Coba parse JSON mentah
-        try {
-          jsonDecode(content);
-          count = await DatabaseHelper.instance.importFromJson(content);
-        } catch (_) {
-          // Mungkin terenkripsi, minta password
-          final pw = await _askPassword(context, 'Masukkan password dekripsi');
-          if (pw == null) return;
-          count = await DatabaseHelper.instance.importFromJson(content, isEncrypted: true, password: pw);
+      if (ext == 'csv') {
+        if (isEncrypted) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('CSV terenkripsi tidak didukung')),
+            );
+          }
+          return;
         }
-      } else if (format == 'csv') {
-        count = await DatabaseHelper.instance.importFromCsv(content);
+        int count = await DatabaseHelper.instance.importFromCsv(content);
+        _showSuccess(context, count);
       } else {
-        return;
+        // json
+        if (isEncrypted) {
+          final password = await _askPassword(context, 'Masukkan password dekripsi');
+          if (password == null || password.isEmpty) return;
+          int count = await DatabaseHelper.instance.importFromJson(content, isEncrypted: true, password: password);
+          _showSuccess(context, count);
+        } else {
+          int count = await DatabaseHelper.instance.importFromJson(content);
+          _showSuccess(context, count);
+        }
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$count data berhasil diimpor')));
-      if (onRefresh != null) onRefresh!();
+      onRefresh?.call();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal impor: $e')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal impor: $e')),
+        );
+      }
     }
   }
 
   Future<void> _importFromClipboard(BuildContext context) async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text == null || data!.text!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Clipboard kosong')));
+    final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
+    if (clipboardData == null || clipboardData.text!.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Clipboard kosong')),
+        );
+      }
       return;
     }
-    final pw = await _askPassword(context, 'Password untuk dekripsi string');
-    if (pw == null) return;
+    final content = clipboardData.text!;
+    bool? isEncrypted = await _askEncryption(context);
+    if (isEncrypted == null) return;
+
     try {
-      int count = await DatabaseHelper.instance.importFromJson(data.text!, isEncrypted: true, password: pw);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$count data berhasil diimpor')));
-      if (onRefresh != null) onRefresh!();
+      if (isEncrypted) {
+        final password = await _askPassword(context, 'Masukkan password dekripsi');
+        if (password == null || password.isEmpty) return;
+        int count = await DatabaseHelper.instance.importFromJson(content, isEncrypted: true, password: password);
+        _showSuccess(context, count);
+      } else {
+        // Coba deteksi apakah JSON atau CSV?
+        if (content.trim().startsWith('{')) {
+          int count = await DatabaseHelper.instance.importFromJson(content);
+          _showSuccess(context, count);
+        } else {
+          // Anggap CSV
+          int count = await DatabaseHelper.instance.importFromCsv(content);
+          _showSuccess(context, count);
+        }
+      }
+      onRefresh?.call();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e')));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gagal impor: $e')),
+        );
+      }
     }
   }
 
@@ -863,13 +968,44 @@ class SettingsScreen extends StatelessWidget {
             onPressed: () => Navigator.pop(ctx, controller.text),
             child: const Text('OK'),
           ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
         ],
       ),
     );
   }
+
+  Future<bool?> _askEncryption(BuildContext context) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Apakah data dienkripsi?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ya'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Tidak'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccess(BuildContext context, int count) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Berhasil mengimpor $count item')),
+      );
+    }
+  }
 }
 
-// --- ACCOUNT CARD (dengan tombol Riwayat) ---
+// --- COMPONENT: ACCOUNT CARD (dengan tombol Riwayat) ---
 class AccountCard extends StatefulWidget {
   final Map<String, dynamic> account;
   final int index;
@@ -1249,7 +1385,7 @@ class ChangeLogDialog extends StatelessWidget {
   }
 }
 
-// --- SCREEN: ADD / EDIT ACCOUNT FORM (TIDAK BERUBAH) ---
+// --- SCREEN 2: ADD / EDIT ACCOUNT FORM (tidak berubah) ---
 class AccountFormScreen extends StatefulWidget {
   final Map<String, dynamic>? account;
   const AccountFormScreen({Key? key, this.account}) : super(key: key);
