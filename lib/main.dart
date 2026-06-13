@@ -254,7 +254,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           Row(
             children: [
-              // Logo Aplikasi Premium
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -271,7 +270,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: const Icon(Icons.security_rounded, color: Colors.white, size: 24),
               ),
               const SizedBox(width: 14),
-              // Judul & Total Akun (Rapi di bawah judul)
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -282,7 +280,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
-              // Tombol Tema
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8F9FA),
@@ -461,15 +458,6 @@ class _AccountCardState extends State<AccountCard> {
     }
   }
 
-  IconData _getPlatformIconFallback(String name) {
-    final lower = name.toLowerCase();
-    if (lower.contains('fb') || lower.contains('facebook')) return Icons.facebook;
-    if (lower.contains('ig') || lower.contains('instagram')) return Icons.camera_alt;
-    if (lower.contains('google')) return Icons.g_mobiledata;
-    if (lower.contains('x') || lower.contains('twitter') || lower.contains('tt')) return Icons.close;
-    return Icons.public;
-  }
-
   Widget _buildPlatformIcon(String? iconPath, String name, double size) {
     if (iconPath != null && iconPath.isNotEmpty) {
       if (iconPath.startsWith('assets/')) {
@@ -478,7 +466,8 @@ class _AccountCardState extends State<AccountCard> {
         return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.file(File(iconPath), width: size, height: size, fit: BoxFit.cover));
       }
     }
-    return Icon(_getPlatformIconFallback(name), color: Colors.black54, size: size * 0.8);
+    // Jika tidak ada custom_icon_path, selalu render Globe. Fitur auto-fallback dihapus.
+    return Icon(Icons.public, color: Colors.black54, size: size * 0.8);
   }
 
   String _formatDate(String? isoString) {
@@ -881,6 +870,15 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
           leading: IconButton(icon: const Icon(Icons.close, color: Colors.black87), onPressed: () => Navigator.pop(context)),
           title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
           centerTitle: true,
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: TextButton(
+                onPressed: _saveAccount,
+                child: Text('Simpan', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            )
+          ],
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
@@ -936,7 +934,6 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                       onTap: () {
                         setState(() {
                           selectedIconPath = path;
-                          // Memperbarui nama secara instan setiap kali ikon bawaan diketuk (tanpa syarat is empty)
                           String platformName = path.split('/').last.split('.').first;
                           if (platformName.toLowerCase() == 'x') {
                             platformName = 'X (Twitter)';
