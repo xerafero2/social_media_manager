@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert'; // Untuk JSON
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -10,8 +11,9 @@ import 'package:otp/otp.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:encrypt/encrypt.dart' as encrypt; // Untuk enkripsi
 
-// --- THEME MANAGER ---
+// --- THEME MANAGER (Tidak berubah) ---
 class ThemeManager {
   static final ValueNotifier<Color> appColor = ValueNotifier(const Color(0xFF1E40AF));
 
@@ -60,7 +62,7 @@ class SocialMediaManagerApp extends StatelessWidget {
   }
 }
 
-// --- DATABASE HELPER ---
+// --- DATABASE HELPER (DIPERBARUI) ---
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
@@ -76,7 +78,7 @@ class DatabaseHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, filePath);
-    return await openDatabase(path, version: 1, onCreate: _createDB);
+    return await openDatabase(path, version: 2, onCreate: _createDB, onUpgrade: _upgradeDB);
   }
 
   Future _createDB(Database db, int version) async {
@@ -97,6 +99,34 @@ class DatabaseHelper {
         tags TEXT
       )
     ''');
+    // Tabel log perubahan
+    await db.execute('''
+      CREATE TABLE account_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        field_name TEXT NOT NULL,
+        old_value TEXT,
+        new_value TEXT,
+        changed_at TEXT NOT NULL,
+        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+      )
+    ''');
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS account_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          account_id INTEGER NOT NULL,
+          field_name TEXT NOT NULL,
+          old_value TEXT,
+          new_value TEXT,
+          changed_at TEXT NOT NULL,
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+        )
+      ''');
+    }
   }
 
   Future<int> insertAccount(Map<String, dynamic> row) async {
@@ -104,9 +134,35 @@ class DatabaseHelper {
     return await db.insert('accounts', row);
   }
 
+  // Fungsi update yang mencatat log perubahan
   Future<int> updateAccount(Map<String, dynamic> row) async {
     final db = await instance.database;
     int id = row['id'];
+
+    // Ambil data lama
+    final oldData = await db.query('accounts', where: 'id = ?', whereArgs: [id]);
+    if (oldData.isNotEmpty) {
+      final oldRow = oldData.first;
+      final now = DateTime.now().toIso8601String();
+      final fields = ['name', 'identifier', 'password', 'a2f', 'secret_key',
+                      'custom_icon_path', 'avatar_path', 'dob', 'account_year', 'tags'];
+      for (var field in fields) {
+        dynamic oldVal = oldRow[field];
+        dynamic newVal = row[field];
+        String oldStr = oldVal?.toString() ?? '';
+        String newStr = newVal?.toString() ?? '';
+        if (oldStr != newStr) {
+          await db.insert('account_history', {
+            'account_id': id,
+            'field_name': field,
+            'old_value': oldStr,
+            'new_value': newStr,
+            'changed_at': now,
+          });
+        }
+      }
+    }
+
     return await db.update('accounts', row, where: 'id = ?', whereArgs: [id]);
   }
 
@@ -139,7 +195,72 @@ class DatabaseHelper {
 
   Future<int> deleteAccount(int id) async {
     final db = await instance.database;
+    // Hapus riwayat terkait karena ON DELETE CASCADE
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Riwayat perubahan untuk satu akun
+  Future<List<Map<String, dynamic>>> getHistory(int accountId) async {
+    final db = await instance.database;
+    return await db.query('account_history',
+        where: 'account_id = ?',
+        whereArgs: [accountId],
+        orderBy: 'changed_at DESC');
+  }
+
+  // === FUNGSI BACKUP & RESTORE ===
+
+  Future<String> exportToJson() async {
+    final db = await instance.database;
+    final accounts = await db.query('accounts');
+    final history = await db.query('account_history');
+    final backup = {
+      'version': 1,
+      'exported_at': DateTime.now().toIso8601String(),
+      'accounts': accounts,
+      'history': history,
+    };
+    return jsonEncode(backup);
+  }
+
+  Future<int> importFromJson(String jsonString, {bool isEncrypted = false, String password = ''}) async {
+    if (isEncrypted) {
+      jsonString = decryptAes(jsonString, password);
+    }
+    final backup = jsonDecode(jsonString);
+    final List accounts = backup['accounts'];
+    final List history = backup['history'] ?? [];
+    final db = await instance.database;
+
+    // Hapus data lama sebelum import (opsional, bisa diganti merge)
+    await db.delete('accounts');
+    await db.delete('account_history');
+
+    for (var acc in accounts) {
+      await db.insert('accounts', acc);
+    }
+    for (var hist in history) {
+      await db.insert('account_history', hist);
+    }
+    return accounts.length + history.length;
+  }
+
+  // Enkripsi/dekripsi AES untuk backup string
+  static String encryptAes(String plainText, String password) {
+    final key = encrypt.Key.fromUtf8(password.padRight(32).substring(0, 32));
+    final iv = encrypt.IV.fromLength(16);
+    final encrypter = encrypt.Encrypter(encrypt.AES(key));
+    final encrypted = encrypter.encrypt(plainText, iv: iv);
+    return '${iv.base64}:${encrypted.base64}';
+  }
+
+  static String decryptAes(String encryptedText, String password) {
+    final parts = encryptedText.split(':');
+    final iv = encrypt.IV.fromBase64(parts[0]);
+    final encrypted = parts[1];
+    final key = encrypt.Key.fromUtf8(password.padRight(32).substring(0, 32));
+    final encrypter = encrypt.Encrypter(encrypt.AES(key));
+    return encrypter.decrypt64(encrypted, iv: iv);
   }
 }
 
@@ -288,7 +409,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.color_lens_rounded, size: 22, color: Colors.black87),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen(onRefresh: null))).then((_) => _refreshAccounts()),
                   constraints: const BoxConstraints(),
                   padding: const EdgeInsets.all(10),
                 ),
@@ -382,9 +503,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// --- SCREEN 1.5: SETTINGS (THEME MANAGER) ---
+// --- SCREEN 1.5: SETTINGS + BACKUP/RESTORE ---
 class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  final VoidCallback? onRefresh; // untuk refresh dashboard jika ada restore
+  const SettingsScreen({Key? key, this.onRefresh}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -399,37 +521,157 @@ class SettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pengaturan Tema', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
+        title: const Text('Pengaturan', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context)),
       ),
-      body: ListView.separated(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        itemCount: themes.length,
-        separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.black12),
-        itemBuilder: (context, index) {
-          final t = themes[index];
-          final Color tColor = t['color'];
-          final bool isSelected = ThemeManager.appColor.value.value == tColor.value;
+        children: [
+          const Text('Tema Warna', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+          ...themes.map((t) {
+            final Color tColor = t['color'];
+            final bool isSelected = ThemeManager.appColor.value.value == tColor.value;
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              leading: CircleAvatar(backgroundColor: tColor, radius: 18),
+              title: Text(t['name'], style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
+              trailing: isSelected ? Icon(Icons.check_circle, color: tColor) : null,
+              onTap: () {
+                ThemeManager.setTheme(tColor);
+                Navigator.pop(context);
+              },
+            );
+          }).toList(),
+          const Divider(height: 32),
+          const Text('Data & Cadangan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.backup_outlined),
+            title: const Text('Ekspor Backup'),
+            subtitle: const Text('Salin string backup (JSON, dapat dienkripsi)'),
+            onTap: () => _showExportDialog(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.restore_outlined),
+            title: const Text('Impor / Restore'),
+            subtitle: const Text('Tempel string backup untuk mengembalikan data'),
+            onTap: () => _showImportDialog(context),
+          ),
+        ],
+      ),
+    );
+  }
 
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            leading: CircleAvatar(backgroundColor: tColor, radius: 18),
-            title: Text(t['name'], style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
-            trailing: isSelected ? Icon(Icons.check_circle, color: tColor) : null,
-            onTap: () {
-              ThemeManager.setTheme(tColor);
-              Navigator.pop(context);
+  void _showExportDialog(BuildContext context) async {
+    final jsonString = await DatabaseHelper.instance.exportToJson();
+    final passwordController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Backup Data'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Data akan diekspor dalam format JSON. Anda bisa mengenkripsinya dengan password (opsional).'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: passwordController,
+              decoration: const InputDecoration(hintText: 'Password enkripsi (kosongkan jika tidak)'),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              String output = jsonString;
+              if (passwordController.text.isNotEmpty) {
+                output = DatabaseHelper.encryptAes(jsonString, passwordController.text);
+              }
+              Clipboard.setData(ClipboardData(text: output));
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup berhasil disalin ke clipboard!')));
+              Navigator.pop(ctx);
             },
-          );
-        },
+            child: const Text('Salin ke Clipboard'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showImportDialog(BuildContext context) async {
+    final jsonController = TextEditingController();
+    final passwordController = TextEditingController();
+    bool isEncrypted = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Restore Data'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Tempel string backup di bawah ini.'),
+              TextField(
+                controller: jsonController,
+                maxLines: 5,
+                decoration: const InputDecoration(hintText: 'String backup'),
+              ),
+              Row(
+                children: [
+                  Checkbox(
+                    value: isEncrypted,
+                    onChanged: (v) => setState(() => isEncrypted = v!),
+                  ),
+                  const Text('Dienkripsi'),
+                ],
+              ),
+              if (isEncrypted)
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(hintText: 'Password dekripsi'),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                try {
+                  await DatabaseHelper.instance.importFromJson(
+                    jsonController.text,
+                    isEncrypted: isEncrypted,
+                    password: passwordController.text,
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Restore berhasil!')));
+                  Navigator.pop(ctx); // tutup dialog
+                  if (onRefresh != null) onRefresh!(); // refresh dashboard
+                } catch (e) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal: $e')));
+                }
+              },
+              child: const Text('Restore'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Batal'),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-// --- COMPONENT: EXPANDED ACCOUNT CARD ---
+// --- COMPONENT: ACCOUNT CARD (DENGAN TOMBOL RIWAYAT) ---
 class AccountCard extends StatefulWidget {
   final Map<String, dynamic> account;
   final int index;
@@ -466,13 +708,21 @@ class _AccountCardState extends State<AccountCard> {
         return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.file(File(iconPath), width: size, height: size, fit: BoxFit.cover));
       }
     }
-    // Jika tidak ada custom_icon_path, selalu render Globe. Fitur auto-fallback dihapus.
     return Icon(Icons.public, color: Colors.black54, size: size * 0.8);
   }
 
   String _formatDate(String? isoString) {
     if (isoString == null || isoString.isEmpty) return 'Tidak tersedia';
     return DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(isoString));
+  }
+
+  void _showHistoryDialog() async {
+    final history = await DatabaseHelper.instance.getHistory(widget.account['id']);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => ChangeLogDialog(history: history),
+    );
   }
 
   @override
@@ -699,8 +949,24 @@ class _AccountCardState extends State<AccountCard> {
                           widget.onRefresh();
                         },
                       ),
-                    )
+                    ),
                   ],
+                ),
+                const SizedBox(height: 8),
+                // Tombol Riwayat
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.black54,
+                      side: BorderSide(color: Colors.black.withOpacity(0.1)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    icon: const Icon(Icons.history, size: 18),
+                    label: const Text('Lihat Riwayat Perubahan'),
+                    onPressed: _showHistoryDialog,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -731,7 +997,62 @@ class _AccountCardState extends State<AccountCard> {
   }
 }
 
-// --- SCREEN 2: ADD / EDIT ACCOUNT FORM ---
+// --- DIALOG RIWAYAT PERUBAHAN ---
+class ChangeLogDialog extends StatelessWidget {
+  final List<Map<String, dynamic>> history;
+  const ChangeLogDialog({Key? key, required this.history}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Riwayat Perubahan', style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: history.isEmpty
+            ? const Text('Belum ada perubahan tercatat.')
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: history.length,
+                itemBuilder: (context, index) {
+                  final h = history[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${h['field_name']}'.toUpperCase(),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black54),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('Lama: ${h['old_value']}', style: const TextStyle(fontSize: 13)),
+                          Text('Baru: ${h['new_value']}', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                          const SizedBox(height: 4),
+                          Text(
+                            DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(h['changed_at'])),
+                            style: const TextStyle(fontSize: 10, color: Colors.black38),
+                            textAlign: TextAlign.right,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Tutup'),
+        ),
+      ],
+    );
+  }
+}
+
+// --- SCREEN 2: ADD / EDIT ACCOUNT FORM (TIDAK BERUBAH SIGNIFIKAN) ---
 class AccountFormScreen extends StatefulWidget {
   final Map<String, dynamic>? account;
   const AccountFormScreen({Key? key, this.account}) : super(key: key);
@@ -841,7 +1162,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       await DatabaseHelper.instance.insertAccount(row);
     } else {
       row['id'] = widget.account!['id'];
-      await DatabaseHelper.instance.updateAccount(row);
+      await DatabaseHelper.instance.updateAccount(row); // otomatis mencatat log
     }
     if (mounted) Navigator.pop(context, true);
   }
