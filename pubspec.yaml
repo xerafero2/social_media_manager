@@ -16,6 +16,9 @@ dependencies:
   intl: ^0.19.0
   shared_preferences: ^2.2.3
   encrypt: ^5.0.3
+  share_plus: ^9.0.0          # Untuk share/export file
+  file_picker: ^8.0.0         # Untuk memilih file saat import
+  path_provider: ^2.1.0       # Untuk mendapatkan direktori temporary
 
 flutter:
   uses-material-design: true
