@@ -1,7 +1,6 @@
 import 'dart:ui';
 import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
@@ -11,11 +10,8 @@ import 'package:otp/otp.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:encrypt/encrypt.dart' as encrypt;
-import 'package:file_picker/file_picker.dart'; // <-- tambahkan
-import 'package:path_provider/path_provider.dart'; // untuk direktori sementara
 
-// --- THEME MANAGER (tidak berubah) ---
+// --- THEME MANAGER ---
 class ThemeManager {
   static final ValueNotifier<Color> appColor = ValueNotifier(const Color(0xFF1E40AF));
 
@@ -64,7 +60,7 @@ class SocialMediaManagerApp extends StatelessWidget {
   }
 }
 
-// --- DATABASE HELPER (diperbarui) ---
+// --- DATABASE HELPER ---
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
@@ -80,7 +76,7 @@ class DatabaseHelper {
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = p.join(dbPath, filePath);
-    return await openDatabase(path, version: 2, onCreate: _createDB, onUpgrade: _upgradeDB);
+    return await openDatabase(path, version: 1, onCreate: _createDB);
   }
 
   Future _createDB(Database db, int version) async {
@@ -101,33 +97,6 @@ class DatabaseHelper {
         tags TEXT
       )
     ''');
-    await db.execute('''
-      CREATE TABLE account_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_id INTEGER NOT NULL,
-        field_name TEXT NOT NULL,
-        old_value TEXT,
-        new_value TEXT,
-        changed_at TEXT NOT NULL,
-        FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
-      )
-    ''');
-  }
-
-  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS account_history (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          account_id INTEGER NOT NULL,
-          field_name TEXT NOT NULL,
-          old_value TEXT,
-          new_value TEXT,
-          changed_at TEXT NOT NULL,
-          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
-        )
-      ''');
-    }
   }
 
   Future<int> insertAccount(Map<String, dynamic> row) async {
@@ -138,30 +107,6 @@ class DatabaseHelper {
   Future<int> updateAccount(Map<String, dynamic> row) async {
     final db = await instance.database;
     int id = row['id'];
-
-    final oldData = await db.query('accounts', where: 'id = ?', whereArgs: [id]);
-    if (oldData.isNotEmpty) {
-      final oldRow = oldData.first;
-      final now = DateTime.now().toIso8601String();
-      final fields = ['name', 'identifier', 'password', 'a2f', 'secret_key',
-                      'custom_icon_path', 'avatar_path', 'dob', 'account_year', 'tags'];
-      for (var field in fields) {
-        dynamic oldVal = oldRow[field];
-        dynamic newVal = row[field];
-        String oldStr = oldVal?.toString() ?? '';
-        String newStr = newVal?.toString() ?? '';
-        if (oldStr != newStr) {
-          await db.insert('account_history', {
-            'account_id': id,
-            'field_name': field,
-            'old_value': oldStr,
-            'new_value': newStr,
-            'changed_at': now,
-          });
-        }
-      }
-    }
-
     return await db.update('accounts', row, where: 'id = ?', whereArgs: [id]);
   }
 
@@ -196,182 +141,9 @@ class DatabaseHelper {
     final db = await instance.database;
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
   }
-
-  Future<List<Map<String, dynamic>>> getHistory(int accountId) async {
-    final db = await instance.database;
-    return await db.query('account_history',
-        where: 'account_id = ?',
-        whereArgs: [accountId],
-        orderBy: 'changed_at DESC');
-  }
-
-  // ========== EKSPOR ==========
-
-  // JSON (data lengkap: akun + riwayat)
-  Future<String> exportToJson() async {
-    final db = await instance.database;
-    final accounts = await db.query('accounts');
-    final history = await db.query('account_history');
-    final backup = {
-      'version': 1,
-      'exported_at': DateTime.now().toIso8601String(),
-      'accounts': accounts,
-      'history': history,
-    };
-    return const JsonEncoder.withIndent('  ').convert(backup);
-  }
-
-  // CSV (hanya akun, tanpa riwayat)
-  Future<String> exportToCsv() async {
-    final db = await instance.database;
-    final accounts = await db.query('accounts');
-    if (accounts.isEmpty) return '';
-
-    final columns = [
-      'name', 'identifier', 'password', 'a2f', 'secret_key',
-      'created_at', 'updated_at', 'custom_icon_path', 'avatar_path',
-      'dob', 'account_year', 'tags'
-    ];
-    final buffer = StringBuffer();
-    buffer.writeln(columns.join(','));
-    for (var acc in accounts) {
-      final row = columns.map((col) {
-        final val = acc[col]?.toString() ?? '';
-        // escape koma dan petik
-        return '"${val.replaceAll('"', '""')}"';
-      }).join(',');
-      buffer.writeln(row);
-    }
-    return buffer.toString();
-  }
-
-  // Raw Text (mudah dibaca manusia)
-  Future<String> exportToRaw() async {
-    final db = await instance.database;
-    final accounts = await db.query('accounts');
-    if (accounts.isEmpty) return 'Tidak ada akun.';
-
-    final buffer = StringBuffer();
-    for (var acc in accounts) {
-      buffer.writeln('=== ${acc['name'] ?? 'AKUN'} ===');
-      buffer.writeln('Username/Email : ${acc['identifier']}');
-      buffer.writeln('Password       : ${acc['password']}');
-      buffer.writeln('2FA            : ${acc['a2f'] == 1 ? "Aktif" : "Tidak"}');
-      if (acc['a2f'] == 1) {
-        buffer.writeln('Secret Key     : ${acc['secret_key'] ?? '-'}');
-      }
-      buffer.writeln('Dibuat         : ${acc['created_at'] ?? '-'}');
-      buffer.writeln('Diperbarui     : ${acc['updated_at'] ?? '-'}');
-      buffer.writeln('Tgl Lahir      : ${acc['dob'] ?? '-'}');
-      buffer.writeln('Tahun Akun     : ${acc['account_year'] ?? '-'}');
-      buffer.writeln('Tag            : ${acc['tags'] ?? '-'}');
-      buffer.writeln('Avatar Path    : ${acc['avatar_path'] ?? '-'}');
-      buffer.writeln('Ikon Path      : ${acc['custom_icon_path'] ?? '-'}');
-      buffer.writeln('');
-    }
-    return buffer.toString();
-  }
-
-  // ========== IMPOR ==========
-
-  // Impor dari string JSON (bisa terenkripsi)
-  Future<int> importFromJson(String jsonString, {bool isEncrypted = false, String password = ''}) async {
-    if (isEncrypted) {
-      jsonString = decryptAes(jsonString, password);
-    }
-    final backup = jsonDecode(jsonString);
-    final List accounts = backup['accounts'];
-    final List history = backup['history'] ?? [];
-    final db = await instance.database;
-
-    // Hapus semua data sebelum impor
-    await db.delete('accounts');
-    await db.delete('account_history');
-
-    for (var acc in accounts) {
-      await db.insert('accounts', acc);
-    }
-    for (var hist in history) {
-      await db.insert('account_history', hist);
-    }
-    return accounts.length + history.length;
-  }
-
-  // Impor dari CSV string
-  Future<int> importFromCsv(String csvString) async {
-    final lines = csvString.split('\n');
-    if (lines.length < 2) return 0;
-    final headers = lines[0].split(',').map((e) => e.trim().replaceAll('"', '')).toList();
-    final db = await instance.database;
-    // Tidak hapus data lama, hanya tambah? Atau opsional? Kita buat replace: hapus lalu impor.
-    await db.delete('accounts');
-    await db.delete('account_history');
-
-    int count = 0;
-    for (int i = 1; i < lines.length; i++) {
-      if (lines[i].trim().isEmpty) continue;
-      final values = _parseCsvLine(lines[i]);
-      if (values.length != headers.length) continue;
-
-      final Map<String, dynamic> row = {};
-      for (int j = 0; j < headers.length; j++) {
-        row[headers[j]] = values[j];
-      }
-      // Konversi a2f ke integer
-      row['a2f'] = int.tryParse(row['a2f']?.toString() ?? '0') ?? 0;
-      // Pastikan id tidak diimpor (otomatis)
-      row.remove('id');
-      await db.insert('accounts', row);
-      count++;
-    }
-    return count;
-  }
-
-  // Helper sederhana untuk parse CSV dengan kutip
-  List<String> _parseCsvLine(String line) {
-    final result = <String>[];
-    bool inQuotes = false;
-    StringBuffer current = StringBuffer();
-    for (int i = 0; i < line.length; i++) {
-      final ch = line[i];
-      if (ch == '"') {
-        if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
-          current.write('"');
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (ch == ',' && !inQuotes) {
-        result.add(current.toString().trim());
-        current = StringBuffer();
-      } else {
-        current.write(ch);
-      }
-    }
-    result.add(current.toString().trim());
-    return result;
-  }
-
-  // Enkripsi/dekripsi AES
-  static String encryptAes(String plainText, String password) {
-    final key = encrypt.Key.fromUtf8(password.padRight(32).substring(0, 32));
-    final iv = encrypt.IV.fromLength(16);
-    final encrypter = encrypt.Encrypter(encrypt.AES(key));
-    final encrypted = encrypter.encrypt(plainText, iv: iv);
-    return '${iv.base64}:${encrypted.base64}';
-  }
-
-  static String decryptAes(String encryptedText, String password) {
-    final parts = encryptedText.split(':');
-    final iv = encrypt.IV.fromBase64(parts[0]);
-    final encrypted = parts[1];
-    final key = encrypt.Key.fromUtf8(password.padRight(32).substring(0, 32));
-    final encrypter = encrypt.Encrypter(encrypt.AES(key));
-    return encrypter.decrypt64(encrypted, iv: iv);
-  }
 }
 
-// --- SCREEN 1: DASHBOARD (hampir tidak berubah, hanya sedikit perubahan di header tombol settings) ---
+// --- SCREEN 1: DASHBOARD ---
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
 
@@ -516,7 +288,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 child: IconButton(
                   icon: const Icon(Icons.color_lens_rounded, size: 22, color: Colors.black87),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(onRefresh: _refreshAccounts))).then((_) => _refreshAccounts()),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
                   constraints: const BoxConstraints(),
                   padding: const EdgeInsets.all(10),
                 ),
@@ -610,10 +382,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// --- SCREEN 1.5: SETTINGS (dengan menu backup/restore yang diperluas) ---
+// --- SCREEN 1.5: SETTINGS (THEME MANAGER) ---
 class SettingsScreen extends StatelessWidget {
-  final VoidCallback? onRefresh;
-  const SettingsScreen({Key? key, this.onRefresh}) : super(key: key);
+  const SettingsScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -628,384 +399,37 @@ class SettingsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pengaturan', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
+        title: const Text('Pengaturan Tema', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context)),
       ),
-      body: ListView(
+      body: ListView.separated(
         padding: const EdgeInsets.all(16),
-        children: [
-          const Text('Tema Warna', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          ...themes.map((t) {
-            final Color tColor = t['color'];
-            final bool isSelected = ThemeManager.appColor.value.value == tColor.value;
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              leading: CircleAvatar(backgroundColor: tColor, radius: 18),
-              title: Text(t['name'], style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
-              trailing: isSelected ? Icon(Icons.check_circle, color: tColor) : null,
-              onTap: () {
-                ThemeManager.setTheme(tColor);
-                Navigator.pop(context);
-              },
-            );
-          }).toList(),
-          const Divider(height: 32),
-          const Text('Data & Cadangan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          ListTile(
-            leading: const Icon(Icons.backup_outlined),
-            title: const Text('Ekspor / Backup'),
-            subtitle: const Text('Simpan data sebagai file atau salin string terenkripsi'),
-            onTap: () => _showExportOptions(context),
-          ),
-          ListTile(
-            leading: const Icon(Icons.restore_outlined),
-            title: const Text('Impor / Restore'),
-            subtitle: const Text('Pulihkan data dari file atau tempel string'),
-            onTap: () => _showImportOptions(context),
-          ),
-        ],
-      ),
-    );
-  }
+        itemCount: themes.length,
+        separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.black12),
+        itemBuilder: (context, index) {
+          final t = themes[index];
+          final Color tColor = t['color'];
+          final bool isSelected = ThemeManager.appColor.value.value == tColor.value;
 
-  // ======== EKSPOR ========
-  void _showExportOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Pilih Format Ekspor', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.code),
-                title: const Text('JSON (data lengkap)'),
-                subtitle: const Text('Termasuk riwayat perubahan'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _exportToFile(context, 'json');
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.table_chart),
-                title: const Text('CSV'),
-                subtitle: const Text('Hanya akun, bisa dibuka di Excel'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _exportToFile(context, 'csv');
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.text_snippet),
-                title: const Text('Raw Text (.txt)'),
-                subtitle: const Text('Mudah dibaca manusia'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _exportToFile(context, 'raw');
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.copy),
-                title: const Text('Salin String Terenkripsi'),
-                subtitle: const Text('Hanya untuk clipboard, perlu password'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _exportEncryptedClipboard(context);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _exportToFile(BuildContext context, String format) async {
-    // Minta password enkripsi (opsional)
-    final password = await _askPassword(context, 'Enkripsi file? (opsional)');
-    if (password == null) return; // user cancel
-
-    String data;
-    String ext;
-    switch (format) {
-      case 'json':
-        data = await DatabaseHelper.instance.exportToJson();
-        ext = 'json';
-        break;
-      case 'csv':
-        data = await DatabaseHelper.instance.exportToCsv();
-        ext = 'csv';
-        break;
-      case 'raw':
-        data = await DatabaseHelper.instance.exportToRaw();
-        ext = 'txt';
-        break;
-      default:
-        return;
-    }
-
-    if (password.isNotEmpty) {
-      data = DatabaseHelper.encryptAes(data, password);
-    }
-
-    // Simpan file menggunakan file_picker (saveFile)
-    String? outputPath = await FilePicker.platform.saveFile(
-      dialogTitle: 'Simpan file backup',
-      fileName: 'backup_accounts_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.$ext',
-      type: FileType.custom,
-      allowedExtensions: [ext],
-    );
-
-    if (outputPath != null) {
-      try {
-        await File(outputPath).writeAsString(data);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('File berhasil disimpan ke $outputPath')),
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: CircleAvatar(backgroundColor: tColor, radius: 18),
+            title: Text(t['name'], style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
+            trailing: isSelected ? Icon(Icons.check_circle, color: tColor) : null,
+            onTap: () {
+              ThemeManager.setTheme(tColor);
+              Navigator.pop(context);
+            },
           );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Gagal menyimpan file: $e')),
-          );
-        }
-      }
-    }
-  }
-
-  Future<void> _exportEncryptedClipboard(BuildContext context) async {
-    final jsonString = await DatabaseHelper.instance.exportToJson();
-    final passwordController = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Salin String Terenkripsi'),
-        content: TextField(
-          controller: passwordController,
-          decoration: const InputDecoration(hintText: 'Password enkripsi (wajib)'),
-          obscureText: true,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, passwordController.text),
-            child: const Text('Enkripsi & Salin'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal'),
-          ),
-        ],
+        },
       ),
     );
-
-    if (result != null && result.isNotEmpty) {
-      final encrypted = DatabaseHelper.encryptAes(jsonString, result);
-      await Clipboard.setData(ClipboardData(text: encrypted));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('String terenkripsi berhasil disalin ke clipboard')),
-        );
-      }
-    }
-  }
-
-  // ======== IMPOR ========
-  void _showImportOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Pilih Sumber Impor', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.file_open),
-                title: const Text('Impor dari File'),
-                subtitle: const Text('JSON atau CSV'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _importFromFile(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.paste),
-                title: const Text('Tempel dari Clipboard'),
-                subtitle: const Text('String terenkripsi atau JSON mentah'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _importFromClipboard(context);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _importFromFile(BuildContext context) async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['json', 'csv'],
-    );
-    if (result == null || result.files.isEmpty) return;
-
-    final file = File(result.files.single.path!);
-    String content = await file.readAsString();
-    final ext = result.files.single.extension?.toLowerCase();
-
-    // Cek apakah terenkripsi (opsional minta password)
-    bool? isEncrypted = await _askEncryption(context);
-    if (isEncrypted == null) return;
-
-    try {
-      if (ext == 'csv') {
-        if (isEncrypted) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('CSV terenkripsi tidak didukung')),
-            );
-          }
-          return;
-        }
-        int count = await DatabaseHelper.instance.importFromCsv(content);
-        _showSuccess(context, count);
-      } else {
-        // json
-        if (isEncrypted) {
-          final password = await _askPassword(context, 'Masukkan password dekripsi');
-          if (password == null || password.isEmpty) return;
-          int count = await DatabaseHelper.instance.importFromJson(content, isEncrypted: true, password: password);
-          _showSuccess(context, count);
-        } else {
-          int count = await DatabaseHelper.instance.importFromJson(content);
-          _showSuccess(context, count);
-        }
-      }
-      onRefresh?.call();
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal impor: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _importFromClipboard(BuildContext context) async {
-    final clipboardData = await Clipboard.getData(Clipboard.kTextPlain);
-    if (clipboardData == null || clipboardData.text!.isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Clipboard kosong')),
-        );
-      }
-      return;
-    }
-    final content = clipboardData.text!;
-    bool? isEncrypted = await _askEncryption(context);
-    if (isEncrypted == null) return;
-
-    try {
-      if (isEncrypted) {
-        final password = await _askPassword(context, 'Masukkan password dekripsi');
-        if (password == null || password.isEmpty) return;
-        int count = await DatabaseHelper.instance.importFromJson(content, isEncrypted: true, password: password);
-        _showSuccess(context, count);
-      } else {
-        // Coba deteksi apakah JSON atau CSV?
-        if (content.trim().startsWith('{')) {
-          int count = await DatabaseHelper.instance.importFromJson(content);
-          _showSuccess(context, count);
-        } else {
-          // Anggap CSV
-          int count = await DatabaseHelper.instance.importFromCsv(content);
-          _showSuccess(context, count);
-        }
-      }
-      onRefresh?.call();
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal impor: $e')),
-        );
-      }
-    }
-  }
-
-  Future<String?> _askPassword(BuildContext context, String title) async {
-    final controller = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          decoration: const InputDecoration(hintText: 'Password'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('OK'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool?> _askEncryption(BuildContext context) async {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Apakah data dienkripsi?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ya'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Tidak'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showSuccess(BuildContext context, int count) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Berhasil mengimpor $count item')),
-      );
-    }
   }
 }
 
-// --- COMPONENT: ACCOUNT CARD (dengan tombol Riwayat) ---
+// --- COMPONENT: EXPANDED ACCOUNT CARD ---
 class AccountCard extends StatefulWidget {
   final Map<String, dynamic> account;
   final int index;
@@ -1042,21 +466,13 @@ class _AccountCardState extends State<AccountCard> {
         return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.file(File(iconPath), width: size, height: size, fit: BoxFit.cover));
       }
     }
+    // Jika tidak ada custom_icon_path, selalu render Globe. Fitur auto-fallback dihapus.
     return Icon(Icons.public, color: Colors.black54, size: size * 0.8);
   }
 
   String _formatDate(String? isoString) {
     if (isoString == null || isoString.isEmpty) return 'Tidak tersedia';
     return DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(isoString));
-  }
-
-  void _showHistoryDialog() async {
-    final history = await DatabaseHelper.instance.getHistory(widget.account['id']);
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => ChangeLogDialog(history: history),
-    );
   }
 
   @override
@@ -1283,23 +699,8 @@ class _AccountCardState extends State<AccountCard> {
                           widget.onRefresh();
                         },
                       ),
-                    ),
+                    )
                   ],
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.black54,
-                      side: BorderSide(color: Colors.black.withOpacity(0.1)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                    icon: const Icon(Icons.history, size: 18),
-                    label: const Text('Lihat Riwayat Perubahan'),
-                    onPressed: _showHistoryDialog,
-                  ),
                 ),
                 const SizedBox(height: 12),
                 Row(
@@ -1330,62 +731,7 @@ class _AccountCardState extends State<AccountCard> {
   }
 }
 
-// --- DIALOG RIWAYAT PERUBAHAN ---
-class ChangeLogDialog extends StatelessWidget {
-  final List<Map<String, dynamic>> history;
-  const ChangeLogDialog({Key? key, required this.history}) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Riwayat Perubahan', style: TextStyle(fontWeight: FontWeight.bold)),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: history.isEmpty
-            ? const Text('Belum ada perubahan tercatat.')
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: history.length,
-                itemBuilder: (context, index) {
-                  final h = history[index];
-                  return Card(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${h['field_name']}'.toUpperCase(),
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black54),
-                          ),
-                          const SizedBox(height: 4),
-                          Text('Lama: ${h['old_value']}', style: const TextStyle(fontSize: 13)),
-                          Text('Baru: ${h['new_value']}', style: const TextStyle(fontSize: 13, color: Colors.black87)),
-                          const SizedBox(height: 4),
-                          Text(
-                            DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(h['changed_at'])),
-                            style: const TextStyle(fontSize: 10, color: Colors.black38),
-                            textAlign: TextAlign.right,
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Tutup'),
-        ),
-      ],
-    );
-  }
-}
-
-// --- SCREEN 2: ADD / EDIT ACCOUNT FORM (tidak berubah) ---
+// --- SCREEN 2: ADD / EDIT ACCOUNT FORM ---
 class AccountFormScreen extends StatefulWidget {
   final Map<String, dynamic>? account;
   const AccountFormScreen({Key? key, this.account}) : super(key: key);
