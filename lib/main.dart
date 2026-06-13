@@ -1,66 +1,66 @@
+import 'dart:ui';
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as p;
+import 'package:otp/otp.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:otp/otp.dart';
-import 'package:path/path.dart' as p;
-import 'package:sqflite/sqflite.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-void main() {
-  runApp(const AccountManagerApp());
+// --- THEME MANAGER ---
+class ThemeManager {
+  static final ValueNotifier<Color> appColor = ValueNotifier(const Color(0xFF1E40AF));
+
+  static Future<void> loadTheme() async {
+    final prefs = await SharedPreferences.getInstance();
+    final colorVal = prefs.getInt('theme_color');
+    if (colorVal != null) {
+      appColor.value = Color(colorVal);
+    }
+  }
+
+  static Future<void> setTheme(Color color) async {
+    appColor.value = color;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('theme_color', color.value);
+  }
 }
 
-class AccountManagerApp extends StatelessWidget {
-  const AccountManagerApp({Key? key}) : super(key: key);
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ThemeManager.loadTheme();
+  runApp(const SocialMediaManagerApp());
+}
+
+class SocialMediaManagerApp extends StatelessWidget {
+  const SocialMediaManagerApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'AccountManager',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF8F9FE),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1A1D3B),
-          primary: const Color(0xFF1A1D3B),
-          secondary: const Color(0xFFFF9F43),
-          surface: Colors.white,
-        ),
-        fontFamily: 'Poppins',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          centerTitle: true,
-        ),
-        textTheme: const TextTheme(
-          displayLarge: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1D3B)),
-          bodyLarge: TextStyle(color: Color(0xFF2D3047)),
-          bodyMedium: TextStyle(color: Color(0xFF5D6072)),
-          labelLarge: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        cardTheme: CardTheme(
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Color(0xFFFF9F43),
-          foregroundColor: Colors.white,
-          elevation: 12,
-          shape: CircleBorder(),
-        ),
-      ),
-      home: const DashboardScreen(),
+    return ValueListenableBuilder<Color>(
+      valueListenable: ThemeManager.appColor,
+      builder: (context, color, child) {
+        return MaterialApp(
+          title: 'AccountManager',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            scaffoldBackgroundColor: const Color(0xFFF4F6F9),
+            colorScheme: ColorScheme.fromSeed(seedColor: color, primary: color),
+            fontFamily: 'Roboto',
+          ),
+          home: const DashboardScreen(),
+        );
+      },
     );
   }
 }
 
-// ===================== DATABASE =====================
+// --- DATABASE HELPER ---
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
@@ -69,7 +69,7 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('account_manager_premium.db');
+    _database = await _initDB('account_manager_v6.db');
     return _database!;
   }
 
@@ -83,7 +83,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE accounts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
+        name TEXT,
         identifier TEXT NOT NULL,
         password TEXT NOT NULL,
         a2f INTEGER NOT NULL,
@@ -91,6 +91,7 @@ class DatabaseHelper {
         created_at TEXT,
         updated_at TEXT,
         custom_icon_path TEXT,
+        avatar_path TEXT,
         dob TEXT,
         account_year TEXT,
         tags TEXT
@@ -99,46 +100,50 @@ class DatabaseHelper {
   }
 
   Future<int> insertAccount(Map<String, dynamic> row) async {
-    final db = await database;
+    final db = await instance.database;
     return await db.insert('accounts', row);
   }
 
   Future<int> updateAccount(Map<String, dynamic> row) async {
-    final db = await database;
-    return await db.update('accounts', row, where: 'id = ?', whereArgs: [row['id']]);
+    final db = await instance.database;
+    int id = row['id'];
+    return await db.update('accounts', row, where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<Map<String, dynamic>>> fetchAccounts({
-    String query = '',
-    String sortOption = 'terbaru',
-  }) async {
-    final db = await database;
-    String orderBy = 'updated_at DESC';
-    if (sortOption == 'terlama') {
-      orderBy = 'updated_at ASC';
-    } else if (sortOption == 'a-z') {
-      orderBy = 'name COLLATE NOCASE ASC';
-    }
+  Future<List<Map<String, dynamic>>> fetchAccounts({String query = '', String sortOption = 'terbaru'}) async {
+    try {
+      final db = await instance.database;
+      String orderBy = 'updated_at DESC';
 
-    if (query.isEmpty) {
-      return await db.query('accounts', orderBy: orderBy);
-    } else {
-      return await db.query(
-        'accounts',
-        where: 'name LIKE ? OR identifier LIKE ? OR tags LIKE ?',
-        whereArgs: ['%$query%', '%$query%', '%$query%'],
-        orderBy: orderBy,
-      );
+      if (sortOption == 'terlama') {
+        orderBy = 'updated_at ASC';
+      } else if (sortOption == 'a-z') {
+        orderBy = 'name COLLATE NOCASE ASC';
+      }
+
+      if (query.isEmpty) {
+        return await db.query('accounts', orderBy: orderBy);
+      } else {
+        return await db.query(
+          'accounts',
+          where: 'name LIKE ? OR identifier LIKE ? OR tags LIKE ?',
+          whereArgs: ['%$query%', '%$query%', '%$query%'],
+          orderBy: orderBy,
+        );
+      }
+    } catch (e) {
+      debugPrint('ERROR fetching accounts: $e');
+      return [];
     }
   }
 
   Future<int> deleteAccount(int id) async {
-    final db = await database;
+    final db = await instance.database;
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
   }
 }
 
-// ===================== DASHBOARD =====================
+// --- SCREEN 1: DASHBOARD ---
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
 
@@ -146,24 +151,18 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen>
-    with SingleTickerProviderStateMixin {
+class _DashboardScreenState extends State<DashboardScreen> {
   List<Map<String, dynamic>> _accounts = [];
   Timer? _globalTimer;
   int _secondsRemaining = 30;
+
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _sortOption = 'terbaru';
-  late AnimationController _fadeController;
-  bool _showSearch = false;
 
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..forward();
     _refreshAccounts();
     _startGlobalTimer();
   }
@@ -172,7 +171,6 @@ class _DashboardScreenState extends State<DashboardScreen>
   void dispose() {
     _globalTimer?.cancel();
     _searchController.dispose();
-    _fadeController.dispose();
     super.dispose();
   }
 
@@ -180,8 +178,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     _globalTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
         setState(() {
-          int epochSeconds =
-              (DateTime.now().millisecondsSinceEpoch / 1000).floor();
+          int epochSeconds = (DateTime.now().millisecondsSinceEpoch / 1000).floor();
           _secondsRemaining = 30 - (epochSeconds % 30);
         });
       }
@@ -189,211 +186,165 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _refreshAccounts() async {
-    final data = await DatabaseHelper.instance.fetchAccounts(
-      query: _searchQuery,
-      sortOption: _sortOption,
-    );
-    if (mounted) setState(() => _accounts = data);
+    final data = await DatabaseHelper.instance.fetchAccounts(query: _searchQuery, sortOption: _sortOption);
+    if (mounted) setState(() { _accounts = data; });
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
-        body: NestedScrollView(
-          headerSliverBuilder: (context, innerBoxIsScrolled) => [
-            SliverAppBar(
-              pinned: true,
-              floating: false,
-              expandedHeight: 160,
-              backgroundColor: Colors.transparent,
-              flexibleSpace: FlexibleSpaceBar(
-                background: _buildPremiumHeader(),
-              ),
-            ),
-          ],
-          body: _accounts.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(40),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.shield_outlined,
-                            size: 64,
-                            color: const Color(0xFF1A1D3B).withOpacity(0.2)),
-                        const SizedBox(height: 16),
-                        Text(
-                          _searchQuery.isEmpty
-                              ? 'Belum ada akun yang disimpan'
-                              : 'Tidak ada hasil untuk "$_searchQuery"',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: const Color(0xFF1A1D3B).withOpacity(0.4),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildCleanHeader(context),
+              Expanded(
+                child: _accounts.isEmpty
+                    ? Center(
+                        child: Text(
+                          _searchQuery.isEmpty ? 'Belum ada akun yang disimpan' : 'Tidak ada akun yang cocok',
+                          style: const TextStyle(color: Colors.black38, fontWeight: FontWeight.w500),
                         ),
-                      ],
-                    ),
-                  ),
-                )
-              : FadeTransition(
-                  opacity: _fadeController,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                    itemCount: _accounts.length,
-                    itemBuilder: (context, index) {
-                      final acc = _accounts[index];
-                      return AccountCard(
-                        key: ValueKey(
-                            'card_${acc['id']}_${acc['updated_at']}'),
-                        account: acc,
-                        secondsRemaining: _secondsRemaining,
-                        onRefresh: _refreshAccounts,
-                      );
-                    },
-                  ),
-                ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () async {
-            final result = await Navigator.push(
-              context,
-              PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const AccountFormScreen(),
-                transitionsBuilder: (_, animation, __, child) {
-                  return FadeTransition(opacity: animation, child: child);
-                },
-                transitionDuration: const Duration(milliseconds: 300),
+                      )
+                    : ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        itemCount: _accounts.length,
+                        itemBuilder: (context, index) {
+                          final acc = _accounts[index];
+                          return AccountCard(
+                            key: ValueKey('card_${acc['id']}_${acc['name']}_${acc['identifier']}_${acc['password']}_${acc['custom_icon_path']}_${acc['avatar_path']}_${acc['tags']}_${acc['updated_at']}'),
+                            account: acc,
+                            index: index + 1,
+                            secondsRemaining: _secondsRemaining,
+                            onRefresh: _refreshAccounts,
+                          );
+                        },
+                      ),
               ),
-            );
+            ],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          foregroundColor: Colors.white,
+          elevation: 4,
+          icon: const Icon(Icons.add),
+          label: const Text('Tambah Akun', style: TextStyle(fontWeight: FontWeight.bold)),
+          onPressed: () async {
+            final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => const AccountFormScreen()));
             if (result == true) _refreshAccounts();
           },
-          child: const Icon(Icons.add, size: 28),
         ),
       ),
     );
   }
 
-  Widget _buildPremiumHeader() {
+  Widget _buildCleanHeader(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF1A1D3B), Color(0xFF2A2D4A)],
-        ),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
       ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.security, color: Color(0xFFFF9F43), size: 28),
-                  const SizedBox(width: 12),
-                  const Text(
-                    'AccountManager',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.vpn_key_rounded,
-                            color: Color(0xFFFF9F43), size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          '${_accounts.length} akun',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+              Icon(Icons.shield, color: Theme.of(context).colorScheme.primary, size: 30),
+              const SizedBox(width: 10),
+              const Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+              const Spacer(),
+              Container(
+                decoration: BoxDecoration(border: Border.all(color: Colors.black12), shape: BoxShape.circle),
+                child: IconButton(
+                  icon: const Icon(Icons.color_lens_outlined, size: 20, color: Colors.black54),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
+                  constraints: const BoxConstraints(),
+                ),
               ),
-              const SizedBox(height: 20),
-              // Search & Sort Row
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Container(
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (value) {
-                            _searchQuery = value;
-                            _refreshAccounts();
-                          },
-                          style: const TextStyle(fontSize: 14),
-                          decoration: InputDecoration(
-                            hintText: 'Cari platform, username, atau tag...',
-                            hintStyle: TextStyle(
-                                color: Colors.grey.shade400, fontSize: 14),
-                            prefixIcon: Icon(Icons.search,
-                                color: Colors.grey.shade400, size: 20),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(
-                                vertical: 14, horizontal: 16),
-                          ),
-                        ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: Text('Total: ${_accounts.length}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F9FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.black.withOpacity(0.06)),
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (value) {
+                      _searchQuery = value;
+                      _refreshAccounts();
+                    },
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                    decoration: const InputDecoration(
+                      hintText: 'Cari platform, username, atau tag...',
+                      hintStyle: TextStyle(color: Colors.black38, fontSize: 14, fontWeight: FontWeight.normal),
+                      prefixIcon: Icon(Icons.search, color: Colors.black38, size: 20),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.black.withOpacity(0.1)),
+                ),
+                child: PopupMenuButton<String>(
+                  icon: Icon(Icons.tune, color: Theme.of(context).colorScheme.primary),
+                  tooltip: 'Urutkan Akun',
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  position: PopupMenuPosition.under,
+                  onSelected: (value) {
+                    setState(() { _sortOption = value; });
+                    _refreshAccounts();
+                  },
+                  itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'terbaru',
+                      child: Row(
+                        children: [
+                          Icon(Icons.access_time, size: 20, color: _sortOption == 'terbaru' ? Theme.of(context).colorScheme.primary : Colors.black54),
+                          const SizedBox(width: 12),
+                          Text('Terbaru Ditambahkan', style: TextStyle(fontWeight: _sortOption == 'terbaru' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'terbaru' ? Theme.of(context).colorScheme.primary : Colors.black87)),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      elevation: 2,
-                      child: PopupMenuButton<String>(
-                        icon: const Icon(Icons.sort_rounded,
-                            color: Color(0xFFFF9F43)),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
-                        onSelected: (value) {
-                          setState(() => _sortOption = value);
-                          _refreshAccounts();
-                        },
-                        itemBuilder: (_) => [
-                          _buildSortItem(
-                              'terbaru', 'Terbaru', Icons.access_time),
-                          _buildSortItem(
-                              'terlama', 'Terlama', Icons.history),
-                          _buildSortItem(
-                              'a-z', 'A-Z', Icons.sort_by_alpha),
+                    PopupMenuItem<String>(
+                      value: 'terlama',
+                      child: Row(
+                        children: [
+                          Icon(Icons.history, size: 20, color: _sortOption == 'terlama' ? Theme.of(context).colorScheme.primary : Colors.black54),
+                          const SizedBox(width: 12),
+                          Text('Terlama Ditambahkan', style: TextStyle(fontWeight: _sortOption == 'terlama' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'terlama' ? Theme.of(context).colorScheme.primary : Colors.black87)),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'a-z',
+                      child: Row(
+                        children: [
+                          Icon(Icons.sort_by_alpha, size: 20, color: _sortOption == 'a-z' ? Theme.of(context).colorScheme.primary : Colors.black54),
+                          const SizedBox(width: 12),
+                          Text('Abjad (A - Z)', style: TextStyle(fontWeight: _sortOption == 'a-z' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'a-z' ? Theme.of(context).colorScheme.primary : Colors.black87)),
                         ],
                       ),
                     ),
@@ -402,494 +353,372 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  PopupMenuItem<String> _buildSortItem(
-      String value, String label, IconData icon) {
-    return PopupMenuItem<String>(
-      value: value,
-      child: Row(
-        children: [
-          Icon(icon,
-              size: 18,
-              color: _sortOption == value
-                  ? const Color(0xFFFF9F43)
-                  : Colors.grey),
-          const SizedBox(width: 12),
-          Text(label,
-              style: TextStyle(
-                  fontWeight:
-                      _sortOption == value ? FontWeight.bold : FontWeight.w500,
-                  color: _sortOption == value
-                      ? const Color(0xFFFF9F43)
-                      : Colors.black87)),
         ],
       ),
     );
   }
 }
 
-// ===================== ACCOUNT CARD =====================
+// --- SCREEN 1.5: SETTINGS (THEME MANAGER) ---
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Map<String, dynamic>> themes = [
+      {'name': 'Biru Profesional (Default)', 'color': const Color(0xFF1E40AF)},
+      {'name': 'Ungu Modern', 'color': const Color(0xFF6C4DFF)},
+      {'name': 'Hijau Emerald', 'color': const Color(0xFF059669)},
+      {'name': 'Merah Ruby', 'color': const Color(0xFFDC2626)},
+      {'name': 'Hitam Elegan', 'color': const Color(0xFF1F2937)},
+      {'name': 'Oranye Senja', 'color': const Color(0xFFEA580C)},
+    ];
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Pengaturan Tema', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context)),
+      ),
+      body: ListView.separated(
+        padding: const EdgeInsets.all(16),
+        itemCount: themes.length,
+        separatorBuilder: (_, __) => const Divider(height: 1, color: Colors.black12),
+        itemBuilder: (context, index) {
+          final t = themes[index];
+          final Color tColor = t['color'];
+          final bool isSelected = ThemeManager.appColor.value.value == tColor.value;
+
+          return ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: CircleAvatar(backgroundColor: tColor, radius: 18),
+            title: Text(t['name'], style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.w500)),
+            trailing: isSelected ? Icon(Icons.check_circle, color: tColor) : null,
+            onTap: () {
+              ThemeManager.setTheme(tColor);
+              Navigator.pop(context);
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// --- COMPONENT: EXPANDED ACCOUNT CARD ---
 class AccountCard extends StatefulWidget {
   final Map<String, dynamic> account;
+  final int index;
   final int secondsRemaining;
   final VoidCallback onRefresh;
 
-  const AccountCard({
-    Key? key,
-    required this.account,
-    required this.secondsRemaining,
-    required this.onRefresh,
-  }) : super(key: key);
+  const AccountCard({Key? key, required this.account, required this.index, required this.secondsRemaining, required this.onRefresh}) : super(key: key);
 
   @override
   State<AccountCard> createState() => _AccountCardState();
 }
 
-class _AccountCardState extends State<AccountCard>
-    with SingleTickerProviderStateMixin {
+class _AccountCardState extends State<AccountCard> {
   bool _isPasswordVisible = false;
-  late AnimationController _slideController;
-  late Animation<double> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _slideController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-      value: 1.0,
-    );
-    _slideAnimation = CurvedAnimation(
-      parent: _slideController,
-      curve: Curves.easeOutCubic,
-    );
-  }
-
-  @override
-  void dispose() {
-    _slideController.dispose();
-    super.dispose();
-  }
 
   void _copyToClipboard(String text, String label) {
     Clipboard.setData(ClipboardData(text: text));
-    HapticFeedback.lightImpact();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$label berhasil disalin',
-            style: const TextStyle(fontWeight: FontWeight.w500)),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: const Color(0xFF1A1D3B),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label tersalin', style: const TextStyle(fontWeight: FontWeight.w500)), duration: const Duration(seconds: 1)));
   }
 
   String _getTotp() {
     try {
-      return OTP.generateTOTPCodeString(
-        widget.account['secret_key'],
-        DateTime.now().millisecondsSinceEpoch,
-        length: 6,
-        interval: 30,
-        algorithm: Algorithm.SHA1,
-        isGoogle: true,
-      );
+      return OTP.generateTOTPCodeString(widget.account['secret_key'], DateTime.now().millisecondsSinceEpoch, length: 6, interval: 30, algorithm: Algorithm.SHA1, isGoogle: true);
     } catch (e) {
       return 'ERROR ';
     }
   }
 
-  String _relativeTime(String? isoString) {
-    if (isoString == null || isoString.isEmpty) return 'Tidak diketahui';
-    final date = DateTime.tryParse(isoString);
-    if (date == null) return 'Tidak diketahui';
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inSeconds < 60) return 'Baru saja';
-    if (diff.inMinutes < 60) return '${diff.inMinutes} menit lalu';
-    if (diff.inHours < 24) return '${diff.inHours} jam lalu';
-    if (diff.inDays < 7) return '${diff.inDays} hari lalu';
-    return DateFormat('dd/MM/yy HH:mm').format(date);
+  IconData _getPlatformIconFallback(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('fb') || lower.contains('facebook')) return Icons.facebook;
+    if (lower.contains('ig') || lower.contains('instagram')) return Icons.camera_alt;
+    if (lower.contains('google')) return Icons.g_mobiledata;
+    if (lower.contains('x') || lower.contains('twitter') || lower.contains('tt')) return Icons.close;
+    return Icons.public;
+  }
+
+  Widget _buildPlatformIcon(String? iconPath, String name, double size) {
+    if (iconPath != null && iconPath.isNotEmpty) {
+      if (iconPath.startsWith('assets/')) {
+        return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.asset(iconPath, width: size, height: size, fit: BoxFit.cover));
+      } else {
+        return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.file(File(iconPath), width: size, height: size, fit: BoxFit.cover));
+      }
+    }
+    return Icon(_getPlatformIconFallback(name), color: Colors.black54, size: size * 0.8);
+  }
+
+  String _formatDate(String? isoString) {
+    if (isoString == null || isoString.isEmpty) return 'Tidak tersedia';
+    return DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(isoString));
   }
 
   @override
   Widget build(BuildContext context) {
     final acc = widget.account;
-    final List<String> tags = (acc['tags'] ?? '')
-        .toString()
-        .split(',')
-        .where((e) => e.trim().isNotEmpty)
-        .toList();
+    final List<String> tags = (acc['tags'] ?? '').toString().split(',').where((e) => e.trim().isNotEmpty).toList();
+    final String displayName = (acc['name'] == null || acc['name'].toString().trim().isEmpty) ? 'AKUN' : acc['name'].toString().toUpperCase();
 
-    return SizeTransition(
-      sizeFactor: _slideAnimation,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF1A1D3B).withOpacity(0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-            BoxShadow(
-              color: const Color(0xFF1A1D3B).withOpacity(0.03),
-              blurRadius: 2,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(22),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(22),
-            splashColor: const Color(0xFFFF9F43).withOpacity(0.1),
-            onTap: () async {
-              final result = await Navigator.push(
-                context,
-                PageRouteBuilder(
-                  pageBuilder: (_, __, ___) =>
-                      AccountFormScreen(account: acc),
-                  transitionsBuilder: (_, animation, __, child) {
-                    return FadeTransition(opacity: animation, child: child);
-                  },
-                  transitionDuration: const Duration(milliseconds: 300),
-                ),
-              );
-              if (result == true) widget.onRefresh();
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Header Card
-                  Row(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(0.08)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                _buildBadge(widget.index.toString(), isOutline: true),
+                if (acc['account_year'] != null && acc['account_year'].toString().isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  _buildBadge(acc['account_year'], bgColor: Theme.of(context).colorScheme.primary.withOpacity(0.1), textColor: Theme.of(context).colorScheme.primary),
+                ],
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: const Color(0xFFF8F9FA), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black12)),
+                  child: Row(
                     children: [
-                      _buildPlatformAvatar(acc['name'], acc['custom_icon_path']),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      _buildPlatformIcon(acc['custom_icon_path'], displayName, 16),
+                      const SizedBox(width: 6),
+                      Text(displayName, style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                )
+              ],
+            ),
+          ),
+          
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar Kustom Terapan
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5)),
+                  clipBehavior: Clip.hardEdge,
+                  child: acc['avatar_path'] != null && acc['avatar_path'].toString().isNotEmpty
+                      ? Image.file(File(acc['avatar_path']), fit: BoxFit.cover)
+                      : Icon(Icons.person_outline, color: Theme.of(context).colorScheme.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Tombol Copy di samping Identifier (Email/Username)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(acc['identifier'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.black87)),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.copy_outlined, size: 18, color: Colors.black54),
+                            onPressed: () => _copyToClipboard(acc['identifier'], 'Username/Email'),
+                            constraints: const BoxConstraints(),
+                            padding: const EdgeInsets.all(4),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.only(left: 12, right: 4, top: 4, bottom: 4),
+                        decoration: BoxDecoration(color: const Color(0xFFF8F9FA), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.black.withOpacity(0.05))),
+                        child: Row(
                           children: [
-                            Text(
-                              acc['name'],
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1A1D3B),
+                            Expanded(
+                              child: Text(
+                                _isPasswordVisible ? acc['password'] : '••••••••',
+                                style: TextStyle(fontSize: 14, fontFamily: 'monospace', letterSpacing: _isPasswordVisible ? 0 : 2, color: Colors.black87),
                               ),
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              acc['identifier'],
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w500,
-                              ),
+                            IconButton(
+                              icon: Icon(_isPasswordVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: Colors.black54),
+                              onPressed: () => setState(() { _isPasswordVisible = !_isPasswordVisible; }),
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.all(8),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.copy_outlined, size: 18, color: Colors.black54),
+                              onPressed: () => _copyToClipboard(acc['password'], 'Password'),
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.all(8),
                             ),
                           ],
                         ),
-                      ),
-                      if (acc['account_year'] != null &&
-                          acc['account_year'].toString().isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFF9F43), Color(0xFFFF6B6B)],
-                            ),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            acc['account_year'],
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
+                      )
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  // Password Row
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F6FA),
-                      borderRadius: BorderRadius.circular(12),
+                )
+              ],
+            ),
+          ),
+          
+          const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
+
+          if ((acc['dob'] != null && acc['dob'].toString().isNotEmpty) || tags.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (acc['dob'] != null && acc['dob'].toString().isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(color: const Color(0xFFEF4444), borderRadius: BorderRadius.circular(20)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.cake_outlined, color: Colors.white, size: 14),
+                          const SizedBox(width: 6),
+                          Text(acc['dob'], style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            child: Text(
-                              _isPasswordVisible
-                                  ? acc['password']
-                                  : '••••••••',
-                              key: ValueKey(_isPasswordVisible),
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontFamily: 'monospace',
-                                letterSpacing: _isPasswordVisible ? 0 : 2,
-                                color: const Color(0xFF1A1D3B),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                        _buildCircleButton(
-                          icon: _isPasswordVisible
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded,
-                          onTap: () => setState(
-                              () => _isPasswordVisible = !_isPasswordVisible),
-                        ),
-                        const SizedBox(width: 8),
-                        _buildCircleButton(
-                          icon: Icons.copy_rounded,
-                          onTap: () =>
-                              _copyToClipboard(acc['password'], 'Password'),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // DOB & Tags
-                  if ((acc['dob'] != null &&
-                          acc['dob'].toString().isNotEmpty) ||
-                      tags.isNotEmpty) ...[
-                    const SizedBox(height: 14),
+                  if (tags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        if (acc['dob'] != null &&
-                            acc['dob'].toString().isNotEmpty)
-                          Chip(
-                            avatar: const Icon(Icons.cake_rounded,
-                                size: 16, color: Color(0xFFFF9F43)),
-                            label: Text(acc['dob'],
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
-                            backgroundColor:
-                                const Color(0xFFFF9F43).withOpacity(0.1),
-                            side: BorderSide.none,
-                          ),
-                        ...tags.map((tag) => Chip(
-                              label: Text(tag.trim(),
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600)),
-                              backgroundColor:
-                                  const Color(0xFF1A1D3B).withOpacity(0.05),
-                              side: BorderSide.none,
-                            )),
+                        const Icon(Icons.sports_esports_outlined, color: Colors.black45, size: 18),
+                        ...tags.map((t) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(6)),
+                          child: Text(t.trim(), style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w500)),
+                        )).toList(),
                       ],
-                    ),
-                  ],
-                  // 2FA Section
-                  if (acc['a2f'] == 1 && acc['secret_key'] != null) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            const Color(0xFFFF9F43).withOpacity(0.05),
-                            const Color(0xFFFF6B6B).withOpacity(0.05),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: const Color(0xFFFF9F43).withOpacity(0.3),
-                          width: 1.5,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'KODE 2-FACTOR',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF5D6072),
-                                    letterSpacing: 1,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  _getTotp(),
-                                  style: const TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    color: Color(0xFF1A1D3B),
-                                    letterSpacing: 4,
-                                    fontFamily: 'monospace',
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: LinearProgressIndicator(
-                                    value: widget.secondsRemaining / 30,
-                                    backgroundColor: Colors.grey.shade200,
-                                    color: const Color(0xFFFF9F43),
-                                    minHeight: 4,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          _buildCircleButton(
-                            icon: Icons.copy_rounded,
-                            onTap: () => _copyToClipboard(
-                                _getTotp().replaceAll(' ', ''),
-                                'Token 2FA'),
-                            size: 44,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  // Bottom actions
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Diperbarui ${_relativeTime(acc['updated_at'])}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          _buildCircleButton(
-                            icon: Icons.edit_rounded,
-                            onTap: () async {
-                              final result = await Navigator.push(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder: (_, __, ___) =>
-                                      AccountFormScreen(account: acc),
-                                  transitionsBuilder:
-                                      (_, animation, __, child) {
-                                    return FadeTransition(
-                                        opacity: animation, child: child);
-                                  },
-                                  transitionDuration:
-                                      const Duration(milliseconds: 300),
-                                ),
-                              );
-                              if (result == true) widget.onRefresh();
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          _buildCircleButton(
-                            icon: Icons.delete_rounded,
-                            color: const Color(0xFFE11D48),
-                            bgColor: const Color(0xFFFFE4E6),
-                            onTap: () async {
-                              await DatabaseHelper.instance
-                                  .deleteAccount(acc['id']);
-                              widget.onRefresh();
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    )
+                  ]
                 ],
               ),
             ),
-          ),
-        ),
+
+          if (acc['a2f'] == 1 && acc['secret_key'] != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  border: Border.all(color: const Color(0xFF93C5FD), width: 1.5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('2-FACTOR CODE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black54, letterSpacing: 0.5)),
+                          const SizedBox(height: 4),
+                          Text(
+                            _getTotp(),
+                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFDC2626), letterSpacing: 4),
+                          ),
+                          const SizedBox(height: 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: LinearProgressIndicator(
+                              value: widget.secondsRemaining / 30,
+                              backgroundColor: Colors.black12,
+                              color: const Color(0xFFDC2626),
+                              minHeight: 3,
+                            ),
+                          )
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_outlined, color: Colors.black54),
+                      onPressed: () => _copyToClipboard(_getTotp().replaceAll(' ', ''), 'Token 2FA'),
+                    )
+                  ],
+                ),
+              ),
+            ),
+
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.black87,
+                          side: BorderSide(color: Colors.black.withOpacity(0.1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit', style: TextStyle(fontWeight: FontWeight.bold)),
+                        onPressed: () async {
+                          final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AccountFormScreen(account: acc)));
+                          if (result == true) widget.onRefresh();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      decoration: BoxDecoration(color: const Color(0xFFFFE4E6), borderRadius: BorderRadius.circular(8)),
+                      child: IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Color(0xFFE11D48)),
+                        onPressed: () async {
+                          await DatabaseHelper.instance.deleteAccount(acc['id']);
+                          widget.onRefresh();
+                        },
+                      ),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Dibuat: ${_formatDate(acc['created_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
+                    Text('Update: ${_formatDate(acc['updated_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
+                  ],
+                )
+              ],
+            ),
+          )
+        ],
       ),
     );
   }
 
-  Widget _buildCircleButton({
-    required IconData icon,
-    required VoidCallback onTap,
-    Color color = const Color(0xFF1A1D3B),
-    Color bgColor = const Color(0xFFF5F6FA),
-    double size = 36,
-  }) {
-    return Material(
-      color: bgColor,
-      borderRadius: BorderRadius.circular(size / 2),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(size / 2),
-        onTap: onTap,
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Icon(icon, color: color, size: size * 0.55),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlatformAvatar(String name, String? iconPath) {
-    if (iconPath != null && iconPath.isNotEmpty) {
-      if (iconPath.startsWith('assets/')) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.asset(iconPath, width: 42, height: 42, fit: BoxFit.cover),
-        );
-      } else {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.file(File(iconPath), width: 42, height: 42, fit: BoxFit.cover),
-        );
-      }
-    }
-    // Fallback: lingkaran dengan huruf pertama
-    final letter = name.isNotEmpty ? name[0].toUpperCase() : '?';
+  Widget _buildBadge(String text, {bool isOutline = false, Color? bgColor, Color? textColor}) {
     return Container(
-      width: 42,
-      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A1D3B), Color(0xFF2A2D4A)],
-        ),
-        borderRadius: BorderRadius.circular(12),
+        color: isOutline ? Colors.transparent : (bgColor ?? Colors.white),
+        border: Border.all(color: isOutline ? Colors.black12 : Colors.transparent),
+        borderRadius: BorderRadius.circular(8),
       ),
-      alignment: Alignment.center,
-      child: Text(
-        letter,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 18,
-        ),
-      ),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textColor ?? Colors.black54)),
     );
   }
 }
 
-// ===================== FORM =====================
+// --- SCREEN 2: ADD / EDIT ACCOUNT FORM ---
 class AccountFormScreen extends StatefulWidget {
   final Map<String, dynamic>? account;
   const AccountFormScreen({Key? key, this.account}) : super(key: key);
@@ -902,9 +731,9 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   bool isA2fEnabled = false;
   bool isPasswordVisible = false;
   String? selectedIconPath;
+  String? selectedAvatarPath;
   String? createdAt;
 
-  final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _identifierController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -913,52 +742,75 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
   final TextEditingController _yearController = TextEditingController();
   final TextEditingController _tagsController = TextEditingController();
 
+  final List<String> _builtInIcons = [
+    'assets/icons/facebook.png',
+    'assets/icons/instagram.png',
+    'assets/icons/google.png',
+    'assets/icons/x.png',
+    'assets/icons/tiktok.png',
+  ];
+
   final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     if (widget.account != null) {
-      final acc = widget.account!;
-      _nameController.text = acc['name'];
-      _identifierController.text = acc['identifier'];
-      _passwordController.text = acc['password'];
-      isA2fEnabled = acc['a2f'] == 1;
-      _secretKeyController.text = acc['secret_key'] ?? '';
-      _dobController.text = acc['dob'] ?? '';
-      _yearController.text = acc['account_year'] ?? '';
-      _tagsController.text = acc['tags'] ?? '';
-      selectedIconPath = acc['custom_icon_path'];
-      createdAt = acc['created_at'];
+      _nameController.text = widget.account!['name'] ?? '';
+      _identifierController.text = widget.account!['identifier'];
+      _passwordController.text = widget.account!['password'];
+      isA2fEnabled = widget.account!['a2f'] == 1;
+      _secretKeyController.text = widget.account!['secret_key'] ?? '';
+      _dobController.text = widget.account!['dob'] ?? '';
+      _yearController.text = widget.account!['account_year'] ?? '';
+      _tagsController.text = widget.account!['tags'] ?? '';
+      selectedIconPath = widget.account!['custom_icon_path'];
+      selectedAvatarPath = widget.account!['avatar_path'];
+      createdAt = widget.account!['created_at'];
     }
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImage(bool isAvatar) async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) setState(() => selectedIconPath = image.path);
+    if (image != null) {
+      setState(() {
+        if (isAvatar) {
+          selectedAvatarPath = image.path;
+        } else {
+          selectedIconPath = image.path;
+        }
+      });
+    }
   }
 
   Future<void> _saveAccount() async {
-    if (!_formKey.currentState!.validate()) return;
-
     final name = _nameController.text.trim();
     final identifier = _identifierController.text.trim();
     final password = _passwordController.text.trim();
     String secretKey = _secretKeyController.text.trim().replaceAll(' ', '');
 
-    // Validasi khusus 2FA
-    if (isA2fEnabled && secretKey.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Secret Key wajib diisi saat 2FA aktif'),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: Color(0xFFE11D48),
-        ),
-      );
+    // Validasi: Platform (Name) kini bersifat Opsional
+    if (identifier.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Username/Email dan Password wajib diisi')));
       return;
     }
 
+    // Validasi 2FA: Kunci tidak boleh kosong dan harus bisa digenerate
+    if (isA2fEnabled) {
+      if (secretKey.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal: Secret Key tidak boleh kosong saat A2F aktif!')));
+        return;
+      }
+      try {
+        OTP.generateTOTPCodeString(secretKey, DateTime.now().millisecondsSinceEpoch, algorithm: Algorithm.SHA1, isGoogle: true);
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal: Secret Key 2FA tidak valid! Pastikan format benar.')));
+        return;
+      }
+    }
+
     final nowIso = DateTime.now().toIso8601String();
+
     final row = {
       'name': name,
       'identifier': identifier,
@@ -968,6 +820,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
       'created_at': createdAt ?? nowIso,
       'updated_at': nowIso,
       'custom_icon_path': selectedIconPath,
+      'avatar_path': selectedAvatarPath,
       'dob': _dobController.text.trim(),
       'account_year': _yearController.text.trim(),
       'tags': _tagsController.text.trim(),
@@ -982,160 +835,196 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     if (mounted) Navigator.pop(context, true);
   }
 
+  Widget _buildIconPreview() {
+    if (selectedIconPath != null && selectedIconPath!.isNotEmpty) {
+      if (selectedIconPath!.startsWith('assets/')) {
+        return Image.asset(selectedIconPath!, fit: BoxFit.cover);
+      } else {
+        return Image.file(File(selectedIconPath!), fit: BoxFit.cover);
+      }
+    }
+    return Icon(Icons.public, size: 36, color: Theme.of(context).colorScheme.primary);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.account != null;
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FE),
-      appBar: AppBar(
-        title: Text(
-          isEdit ? 'Edit Akun' : 'Tambah Akun',
-          style: const TextStyle(
-              color: Color(0xFF1A1D3B),
-              fontWeight: FontWeight.w700,
-              fontSize: 18),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.close, color: Colors.black87), onPressed: () => Navigator.pop(context)),
+          title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
+          centerTitle: true,
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded,
-              color: Color(0xFF1A1D3B)),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
           child: Column(
             children: [
-              // Icon selector
-              _buildIconSelector(),
-              const SizedBox(height: 28),
-              _buildTextField(
-                controller: _nameController,
-                hint: 'Platform (contoh: Facebook)',
-                icon: Icons.public_rounded,
-                validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Nama platform wajib diisi'
-                    : null,
+              Center(
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+                    border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  ),
+                  clipBehavior: Clip.hardEdge,
+                  child: _buildIconPreview(),
+                ),
               ),
               const SizedBox(height: 16),
-              _buildTextField(
-                controller: _identifierController,
-                hint: 'Email atau Username',
-                icon: Icons.person_outline_rounded,
-                validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Identifier wajib diisi'
-                    : null,
+              SizedBox(
+                height: 50,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    // Posisi 1: Unggah Foto (Custom Platform Icon)
+                    GestureDetector(
+                      onTap: () => _pickImage(false),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        width: 50,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.black12, style: BorderStyle.solid),
+                        ),
+                        child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
+                      ),
+                    ),
+                    // Posisi 2: Default (Globe)
+                    GestureDetector(
+                      onTap: () => setState(() { selectedIconPath = null; }),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        width: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: selectedIconPath == null ? Theme.of(context).colorScheme.primary : Colors.black12, width: selectedIconPath == null ? 2 : 1),
+                        ),
+                        child: const Icon(Icons.public, color: Colors.black54, size: 24),
+                      ),
+                    ),
+                    // Posisi Lanjutan: Built-in Icons
+                    ..._builtInIcons.map((path) => GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          selectedIconPath = path;
+                          if (_nameController.text.trim().isEmpty) {
+                            String platformName = path.split('/').last.split('.').first;
+                            if (platformName.toLowerCase() == 'x') {
+                              platformName = 'X (Twitter)';
+                            } else {
+                              platformName = platformName[0].toUpperCase() + platformName.substring(1);
+                            }
+                            _nameController.text = platformName;
+                          }
+                        });
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.all(6),
+                        width: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: selectedIconPath == path ? Theme.of(context).colorScheme.primary : Colors.black12,
+                            width: selectedIconPath == path ? 2 : 1,
+                          ),
+                        ),
+                        child: Image.asset(path),
+                      ),
+                    )).toList()
+                  ],
+                ),
               ),
+              const SizedBox(height: 24),
+              _buildTextField(controller: _nameController, hint: 'Singkatan / Platform (Opsional)', icon: Icons.public),
               const SizedBox(height: 16),
-              _buildTextField(
-                controller: _passwordController,
-                hint: 'Password',
-                icon: Icons.lock_outline_rounded,
-                isPassword: true,
-                isVisible: isPasswordVisible,
-                onVisibilityToggle: () =>
-                    setState(() => isPasswordVisible = !isPasswordVisible),
-                validator: (v) => v == null || v.trim().isEmpty
-                    ? 'Password wajib diisi'
-                    : null,
-              ),
-              const SizedBox(height: 16),
+              // Fitur Custom Avatar Terintegrasi ke Input Username
               Row(
                 children: [
-                  Expanded(
-                    child: _buildTextField(
-                      controller: _dobController,
-                      hint: 'Tanggal Lahir (10 Okt 1980)',
+                  GestureDetector(
+                    onTap: () => _pickImage(true), // Mode pilih Avatar
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8F9FA),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black12),
+                      ),
+                      clipBehavior: Clip.hardEdge,
+                      child: selectedAvatarPath != null
+                          ? Image.file(File(selectedAvatarPath!), fit: BoxFit.cover)
+                          : const Icon(Icons.add_a_photo_outlined, color: Colors.black38, size: 20),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: _buildTextField(
-                      controller: _yearController,
-                      hint: 'Tahun Akun',
-                      keyboardType: TextInputType.number,
-                    ),
+                    child: _buildTextField(controller: _identifierController, hint: 'Email atau Username'),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
               _buildTextField(
-                controller: _tagsController,
-                hint: 'Tag (pisahkan dengan koma)',
-                icon: Icons.sell_outlined,
+                controller: _passwordController,
+                hint: 'Password Akun',
+                icon: Icons.lock_outline,
+                isPassword: true,
+                isVisible: isPasswordVisible,
+                onVisibilityToggle: () => setState(() { isPasswordVisible = !isPasswordVisible; }),
               ),
               const SizedBox(height: 24),
-              // 2FA toggle
+              Row(
+                children: [
+                  Expanded(child: _buildTextField(controller: _dobController, hint: 'Tgl Lahir')),
+                  const SizedBox(width: 12),
+                  Expanded(child: _buildTextField(controller: _yearController, hint: 'Tahun Buat', keyboardType: TextInputType.number)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildTextField(controller: _tagsController, hint: 'Kategori / Game (pisahkan koma)', icon: Icons.sports_esports_outlined),
+              const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.05))),
                 child: Column(
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Aktifkan 2-Factor Code',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1D3B),
-                          ),
-                        ),
-                        Switch(
-                          value: isA2fEnabled,
-                          activeColor: const Color(0xFFFF9F43),
-                          onChanged: (val) =>
-                              setState(() => isA2fEnabled = val),
-                        ),
+                        const Text('Aktifkan 2-Factor Code', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                        Switch(value: isA2fEnabled, activeColor: Theme.of(context).colorScheme.primary, onChanged: (val) => setState(() { isA2fEnabled = val; })),
                       ],
                     ),
                     if (isA2fEnabled) ...[
-                      const SizedBox(height: 16),
-                      _buildTextField(
-                        controller: _secretKeyController,
-                        hint: 'Secret Key Base32',
-                        icon: Icons.vpn_key_rounded,
-                        validator: (v) => v == null || v.trim().isEmpty
-                            ? 'Secret key tidak boleh kosong'
-                            : null,
-                      ),
-                    ],
+                      const Divider(height: 24),
+                      _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
+                    ]
                   ],
                 ),
               ),
               const SizedBox(height: 40),
               SizedBox(
                 width: double.infinity,
-                height: 56,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFF9F43),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    elevation: 8,
-                    shadowColor: const Color(0xFFFF9F43).withOpacity(0.4),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                   onPressed: _saveAccount,
-                  child: Text(
-                    isEdit ? 'Simpan Perubahan' : 'Tambah Akun Baru',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
+                  child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -1145,112 +1034,24 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     );
   }
 
-  Widget _buildIconSelector() {
-    return Center(
-      child: Column(
-        children: [
-          GestureDetector(
-            onTap: _pickImage,
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF1A1D3B).withOpacity(0.08),
-                    blurRadius: 14,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-                border: Border.all(
-                    color: const Color(0xFF1A1D3B).withOpacity(0.05)),
-              ),
-              child: selectedIconPath != null && selectedIconPath!.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(22),
-                      child: selectedIconPath!.startsWith('assets/')
-                          ? Image.asset(selectedIconPath!,
-                              fit: BoxFit.cover)
-                          : Image.file(File(selectedIconPath!),
-                              fit: BoxFit.cover),
-                    )
-                  : const Icon(Icons.add_photo_alternate_outlined,
-                      size: 36, color: Color(0xFF5D6072)),
-            ),
-          ),
-          if (selectedIconPath != null) ...[
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: () => setState(() => selectedIconPath = null),
-              icon: const Icon(Icons.close, size: 16, color: Color(0xFFE11D48)),
-              label: const Text('Hapus ikon',
-                  style: TextStyle(
-                      color: Color(0xFFE11D48),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13)),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hint,
-    IconData? icon,
-    bool isPassword = false,
-    bool isVisible = false,
-    VoidCallback? onVisibilityToggle,
-    TextInputType keyboardType = TextInputType.text,
-    FormFieldValidator<String>? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: isPassword && !isVisible,
-      keyboardType: keyboardType,
-      validator: validator,
-      style: const TextStyle(fontSize: 15, color: Color(0xFF1A1D3B)),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: Colors.grey.shade400),
-        filled: true,
-        fillColor: Colors.white,
-        prefixIcon: icon != null
-            ? Icon(icon, color: const Color(0xFF5D6072), size: 20)
-            : null,
-        suffixIcon: isPassword
-            ? IconButton(
-                icon: Icon(
-                  isVisible
-                      ? Icons.visibility_rounded
-                      : Icons.visibility_off_rounded,
-                  color: const Color(0xFF5D6072),
-                  size: 20,
-                ),
-                onPressed: onVisibilityToggle,
-              )
-            : null,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade200),
+  Widget _buildTextField({required TextEditingController controller, required String hint, IconData? icon, bool isPassword = false, bool isVisible = false, VoidCallback? onVisibilityToggle, TextInputType keyboardType = TextInputType.text}) {
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.1))),
+      child: TextField(
+        controller: controller,
+        obscureText: isPassword && !isVisible,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          prefixIcon: icon != null ? Icon(icon, color: Colors.black38, size: 20) : null,
+          suffixIcon: isPassword
+              ? IconButton(icon: Icon(isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.black38, size: 20), onPressed: onVisibilityToggle)
+              : null,
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: Colors.grey.shade200),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFFF9F43), width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE11D48), width: 1.5),
-        ),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       ),
     );
   }
