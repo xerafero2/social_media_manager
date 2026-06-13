@@ -242,6 +242,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildCleanHeader(BuildContext context) {
+    final themeColor = Theme.of(context).colorScheme.primary;
+    
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
       decoration: BoxDecoration(
@@ -252,27 +254,51 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.shield, color: Theme.of(context).colorScheme.primary, size: 30),
-              const SizedBox(width: 10),
-              const Text('AccountManager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
-              const Spacer(),
+              // Logo Aplikasi Premium
               Container(
-                decoration: BoxDecoration(border: Border.all(color: Colors.black12), shape: BoxShape.circle),
-                child: IconButton(
-                  icon: const Icon(Icons.color_lens_outlined, size: 20, color: Colors.black54),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
-                  constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [themeColor, themeColor.withOpacity(0.7)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(color: themeColor.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3))
+                  ]
+                ),
+                child: const Icon(Icons.security_rounded, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 14),
+              // Judul & Total Akun (Rapi di bawah judul)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('AccountManager', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
+                    const SizedBox(height: 2),
+                    Text('${_accounts.length} Akun tersimpan', style: TextStyle(color: themeColor, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
+              // Tombol Tema
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                child: Text('Total: ${_accounts.length}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 12)),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FA),
+                  border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  borderRadius: BorderRadius.circular(12)
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.color_lens_rounded, size: 22, color: Colors.black87),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen())),
+                  constraints: const BoxConstraints(),
+                  padding: const EdgeInsets.all(10),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
           Row(
             children: [
               Expanded(
@@ -309,7 +335,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   border: Border.all(color: Colors.black.withOpacity(0.1)),
                 ),
                 child: PopupMenuButton<String>(
-                  icon: Icon(Icons.tune, color: Theme.of(context).colorScheme.primary),
+                  icon: Icon(Icons.tune, color: themeColor),
                   tooltip: 'Urutkan Akun',
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   position: PopupMenuPosition.under,
@@ -322,9 +348,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       value: 'terbaru',
                       child: Row(
                         children: [
-                          Icon(Icons.access_time, size: 20, color: _sortOption == 'terbaru' ? Theme.of(context).colorScheme.primary : Colors.black54),
+                          Icon(Icons.access_time, size: 20, color: _sortOption == 'terbaru' ? themeColor : Colors.black54),
                           const SizedBox(width: 12),
-                          Text('Terbaru Ditambahkan', style: TextStyle(fontWeight: _sortOption == 'terbaru' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'terbaru' ? Theme.of(context).colorScheme.primary : Colors.black87)),
+                          Text('Terbaru Ditambahkan', style: TextStyle(fontWeight: _sortOption == 'terbaru' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'terbaru' ? themeColor : Colors.black87)),
                         ],
                       ),
                     ),
@@ -332,9 +358,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       value: 'terlama',
                       child: Row(
                         children: [
-                          Icon(Icons.history, size: 20, color: _sortOption == 'terlama' ? Theme.of(context).colorScheme.primary : Colors.black54),
+                          Icon(Icons.history, size: 20, color: _sortOption == 'terlama' ? themeColor : Colors.black54),
                           const SizedBox(width: 12),
-                          Text('Terlama Ditambahkan', style: TextStyle(fontWeight: _sortOption == 'terlama' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'terlama' ? Theme.of(context).colorScheme.primary : Colors.black87)),
+                          Text('Terlama Ditambahkan', style: TextStyle(fontWeight: _sortOption == 'terlama' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'terlama' ? themeColor : Colors.black87)),
                         ],
                       ),
                     ),
@@ -342,9 +368,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       value: 'a-z',
                       child: Row(
                         children: [
-                          Icon(Icons.sort_by_alpha, size: 20, color: _sortOption == 'a-z' ? Theme.of(context).colorScheme.primary : Colors.black54),
+                          Icon(Icons.sort_by_alpha, size: 20, color: _sortOption == 'a-z' ? themeColor : Colors.black54),
                           const SizedBox(width: 12),
-                          Text('Abjad (A - Z)', style: TextStyle(fontWeight: _sortOption == 'a-z' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'a-z' ? Theme.of(context).colorScheme.primary : Colors.black87)),
+                          Text('Abjad (A - Z)', style: TextStyle(fontWeight: _sortOption == 'a-z' ? FontWeight.bold : FontWeight.normal, color: _sortOption == 'a-z' ? themeColor : Colors.black87)),
                         ],
                       ),
                     ),
@@ -507,7 +533,6 @@ class _AccountCardState extends State<AccountCard> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Avatar Kustom Terapan
                 Container(
                   width: 48,
                   height: 48,
@@ -522,7 +547,6 @@ class _AccountCardState extends State<AccountCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Tombol Copy di samping Identifier (Email/Username)
                       Row(
                         children: [
                           Expanded(
@@ -789,13 +813,11 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     final password = _passwordController.text.trim();
     String secretKey = _secretKeyController.text.trim().replaceAll(' ', '');
 
-    // Validasi: Platform (Name) kini bersifat Opsional
     if (identifier.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Username/Email dan Password wajib diisi')));
       return;
     }
 
-    // Validasi 2FA: Kunci tidak boleh kosong dan harus bisa digenerate
     if (isA2fEnabled) {
       if (secretKey.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal: Secret Key tidak boleh kosong saat A2F aktif!')));
@@ -884,7 +906,6 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: [
-                    // Posisi 1: Unggah Foto (Custom Platform Icon)
                     GestureDetector(
                       onTap: () => _pickImage(false),
                       child: Container(
@@ -898,7 +919,6 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                         child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
                       ),
                     ),
-                    // Posisi 2: Default (Globe)
                     GestureDetector(
                       onTap: () => setState(() { selectedIconPath = null; }),
                       child: Container(
@@ -912,20 +932,18 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                         child: const Icon(Icons.public, color: Colors.black54, size: 24),
                       ),
                     ),
-                    // Posisi Lanjutan: Built-in Icons
                     ..._builtInIcons.map((path) => GestureDetector(
                       onTap: () {
                         setState(() {
                           selectedIconPath = path;
-                          if (_nameController.text.trim().isEmpty) {
-                            String platformName = path.split('/').last.split('.').first;
-                            if (platformName.toLowerCase() == 'x') {
-                              platformName = 'X (Twitter)';
-                            } else {
-                              platformName = platformName[0].toUpperCase() + platformName.substring(1);
-                            }
-                            _nameController.text = platformName;
+                          // Memperbarui nama secara instan setiap kali ikon bawaan diketuk (tanpa syarat is empty)
+                          String platformName = path.split('/').last.split('.').first;
+                          if (platformName.toLowerCase() == 'x') {
+                            platformName = 'X (Twitter)';
+                          } else {
+                            platformName = platformName[0].toUpperCase() + platformName.substring(1);
                           }
+                          _nameController.text = platformName;
                         });
                       },
                       child: Container(
@@ -949,11 +967,10 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
               const SizedBox(height: 24),
               _buildTextField(controller: _nameController, hint: 'Singkatan / Platform (Opsional)', icon: Icons.public),
               const SizedBox(height: 16),
-              // Fitur Custom Avatar Terintegrasi ke Input Username
               Row(
                 children: [
                   GestureDetector(
-                    onTap: () => _pickImage(true), // Mode pilih Avatar
+                    onTap: () => _pickImage(true),
                     child: Container(
                       width: 52,
                       height: 52,
