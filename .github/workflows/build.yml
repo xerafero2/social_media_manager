@@ -24,11 +24,24 @@ jobs:
             sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' $file
             sed -i 's/compileSdk = 33/compileSdk = 36/g' $file
             sed -i 's/compileSdk = 34/compileSdk = 36/g' $file
+            sed -i 's/targetSdkVersion 33/targetSdkVersion 36/g' $file
+            sed -i 's/targetSdkVersion 34/targetSdkVersion 36/g' $file
+            sed -i 's/targetSdk = 33/targetSdk = 36/g' $file
+            sed -i 's/targetSdk = 34/targetSdk = 36/g' $file
           fi
+      # ------------------------------------------------
+      
+      # --- KONFIGURASI GRADLE PROPERTIES ---
+      - run: |
+          mkdir -p android
+          echo "org.gradle.jvmargs=-Xmx4096m" >> android/gradle.properties
+          echo "android.useAndroidX=true" >> android/gradle.properties
+          echo "android.enableJetifier=true" >> android/gradle.properties
       # ------------------------------------------------
       
       - run: flutter clean
       - run: flutter pub get
+      - run: flutter pub upgrade file_picker
       - run: flutter pub upgrade
       - run: flutter build apk --release
       
