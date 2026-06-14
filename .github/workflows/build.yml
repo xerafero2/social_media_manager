@@ -11,11 +11,19 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.x'
+          
       - run: flutter create .
+      
+      # --- PERBAIKAN COMPILE SDK 36 ---
+      - run: sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' android/app/build.gradle
+      - run: sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/g' android/app/build.gradle
+      # --------------------------------
+      
       - run: flutter clean
       - run: flutter pub get
       - run: flutter pub upgrade
       - run: flutter build apk --release
+      
       - uses: actions/upload-artifact@v4
         with:
           name: release-apk
