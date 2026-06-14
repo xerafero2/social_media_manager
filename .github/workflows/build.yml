@@ -12,6 +12,7 @@ jobs:
         with:
           flutter-version: '3.x'
       - run: flutter create .
+      - run: flutter clean
       - run: flutter pub get
       - run: flutter pub upgrade
       - run: flutter build apk --release
