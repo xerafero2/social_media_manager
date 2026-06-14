@@ -14,14 +14,18 @@ jobs:
           
       - run: flutter create .
       
-      # --- PERBAIKAN COMPILE SDK 36 (Mendukung .gradle dan .kts) ---
+      # --- PERBAIKAN COMPILE SDK 36 (MULTI-KONDISI) ---
       - run: |
-          if [ -f android/app/build.gradle ]; then
-            sed -i 's/flutter.compileSdkVersion/36/g' android/app/build.gradle
-          elif [ -f android/app/build.gradle.kts ]; then
-            sed -i 's/flutter.compileSdkVersion/36/g' android/app/build.gradle.kts
+          file="android/app/build.gradle"
+          if [ -f "$file" ]; then
+            sed -i 's/compileSdkVersion 33/compileSdkVersion 36/g' $file
+            sed -i 's/compileSdkVersion 34/compileSdkVersion 36/g' $file
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 36/g' $file
+            sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/g' $file
+            sed -i 's/compileSdk = 33/compileSdk = 36/g' $file
+            sed -i 's/compileSdk = 34/compileSdk = 36/g' $file
           fi
-      # --------------------------------------------------------------
+      # ------------------------------------------------
       
       - run: flutter clean
       - run: flutter pub get
