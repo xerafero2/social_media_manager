@@ -18,9 +18,7 @@ import 'package:encrypt/encrypt.dart' as enc;
 
 // ===================== ENCRYPTION HELPER =====================
 class EncryptionHelper {
-  // Kunci enkripsi statis, HARUS 16, 24, atau 32 karakter.
-  // Ganti dengan kunci yang lebih aman di produksi!
-  static final _key = enc.Key.fromUtf8('my16charsecret!!');
+  static final _key = enc.Key.fromUtf8('my16charsecret!!'); // 16/24/32 karakter
   static final _iv = enc.IV.fromLength(16);
   static final encrypter = enc.Encrypter(enc.AES(_key));
 
@@ -134,26 +132,24 @@ class DatabaseHelper {
     return await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Ambil SEMUA akun (untuk ekspor)
   Future<List<Map<String, dynamic>>> getAllAccounts() async {
     final db = await instance.database;
     return await db.query('accounts');
   }
 
-  /// Impor banyak akun sekaligus (untuk restore)
   Future<void> importAccounts(List<Map<String, dynamic>> rows) async {
     final db = await instance.database;
     final batch = db.batch();
     for (var row in rows) {
       final r = Map<String, dynamic>.from(row);
-      r.remove('id'); // biarkan auto-increment
+      r.remove('id');
       batch.insert('accounts', r);
     }
     await batch.commit(noResult: true);
   }
 }
 
-// ===================== SCREEN EXPORT/IMPORT =====================
+// ===================== EXPORT / IMPORT SCREEN =====================
 class ExportImportScreen extends StatefulWidget {
   const ExportImportScreen({Key? key}) : super(key: key);
 
@@ -164,7 +160,7 @@ class ExportImportScreen extends StatefulWidget {
 class _ExportImportScreenState extends State<ExportImportScreen> {
   String? _encryptedString;
 
-  // ========== KONVERSI ==========
+  // === KONVERSI ===
   Future<String> _accountsToJsonString() async {
     final accounts = await DatabaseHelper.instance.getAllAccounts();
     return jsonEncode(accounts.map((e) => Map<String, dynamic>.from(e)).toList());
@@ -225,8 +221,8 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
     return buffer.toString();
   }
 
-  // ========== EKSPOR ==========
-  Future<void> _exportFile(String extension, String content, String mime) async {
+  // === EKSPOR ===
+  Future<void> _exportFile(String extension, String content) async {
     if (content.isEmpty) {
       _showSnack('Tidak ada data untuk diekspor');
       return;
@@ -234,23 +230,23 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
     final dir = Directory.systemTemp;
     final file = File('${dir.path}/account_manager_export$extension');
     await file.writeAsString(content);
-    await Share.shareXFiles([XFile(file.path)], mimeTypes: [mime]);
+    await Share.shareXFiles([XFile(file.path)]);
   }
 
   Future<void> _exportJson() async {
     final json = await _accountsToJsonString();
-    await _exportFile('.json', json, 'application/json');
+    await _exportFile('.json', json);
   }
 
   Future<void> _exportRaw() async {
     final accounts = await DatabaseHelper.instance.getAllAccounts();
     final raw = _accountsToRawText(accounts);
-    await _exportFile('.txt', raw, 'text/plain');
+    await _exportFile('.txt', raw);
   }
 
   Future<void> _exportCsv() async {
     final csv = await _accountsToCsvString();
-    await _exportFile('.csv', csv, 'text/csv');
+    await _exportFile('.csv', csv);
   }
 
   Future<void> _exportEncryptedString() async {
@@ -262,10 +258,10 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
     final encrypted = EncryptionHelper.encrypt(json);
     setState(() => _encryptedString = encrypted);
     await Clipboard.setData(ClipboardData(text: encrypted));
-    _showSnack('String terenkripsi telah disalin ke clipboard');
+    _showSnack('String terenkripsi disalin ke clipboard');
   }
 
-  // ========== IMPOR ==========
+  // === IMPOR ===
   Future<void> _importFromFile(String extension) async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -285,11 +281,11 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
       } else if (extension == 'csv') {
         accounts = await _accountsFromCsvString(content);
       } else {
-        _showSnack('Format file tidak didukung');
+        _showSnack('Format tidak didukung');
         return;
       }
       await DatabaseHelper.instance.importAccounts(accounts);
-      _showSnack('Impor berhasil (${accounts.length} akun)');
+      _showSnack('Berhasil impor ${accounts.length} akun');
     } catch (e) {
       _showSnack('Gagal impor: $e');
     }
@@ -298,20 +294,20 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
   Future<void> _importFromEncryptedString() async {
     final encrypted = _encryptedString;
     if (encrypted == null || encrypted.isEmpty) {
-      _showSnack('Tidak ada string terenkripsi. Salin dulu atau tempel manual.');
+      _showSnack('Tidak ada string terenkripsi. Salin/tempel dulu.');
       return;
     }
     try {
       final json = EncryptionHelper.decrypt(encrypted);
       final accounts = await _accountsFromJsonString(json);
       await DatabaseHelper.instance.importAccounts(accounts);
-      _showSnack('Impor dari string terenkripsi berhasil (${accounts.length} akun)');
+      _showSnack('Impor sukses (${accounts.length} akun)');
     } catch (e) {
-      _showSnack('Gagal mendekripsi: $e');
+      _showSnack('Gagal dekripsi: $e');
     }
   }
 
-  // ========== UI HELPERS ==========
+  // === UI ===
   void _showSnack(String msg) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -335,20 +331,18 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _sectionTitle('Ekspor Data'),
-            _exportButton('Ekspor sebagai JSON (.json)', Icons.code, _exportJson),
-            _exportButton('Ekspor sebagai Raw Text (.txt)', Icons.text_snippet, _exportRaw),
-            _exportButton('Ekspor sebagai CSV (.csv)', Icons.table_chart, _exportCsv),
+            _exportButton('Ekspor JSON (.json)', Icons.code, _exportJson),
+            _exportButton('Ekspor Raw Text (.txt)', Icons.text_snippet, _exportRaw),
+            _exportButton('Ekspor CSV (.csv)', Icons.table_chart, _exportCsv),
             const Divider(height: 32),
-            _sectionTitle('Salin String Terenkripsi'),
-            const Text(
-              'Enkripsi AES + Base64. Simpan string ini untuk memulihkan data.',
-              style: TextStyle(color: Colors.black54, fontSize: 13),
-            ),
+            _sectionTitle('Salin String Terenkripsi (AES)'),
+            const Text('String ini bisa dipakai untuk memulihkan data.',
+                style: TextStyle(color: Colors.black54, fontSize: 13)),
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: _exportEncryptedString,
               icon: const Icon(Icons.copy),
-              label: const Text('Enkripsi & Salin ke Clipboard'),
+              label: const Text('Enkripsi & Salin'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.grey.shade800,
                 foregroundColor: Colors.white,
@@ -383,10 +377,8 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, top: 8),
-      child: Text(
-        title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
-      ),
+      child: Text(title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
     );
   }
 
@@ -421,7 +413,7 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
   }
 }
 
-// ===================== DASHBOARD (DENGAN TOMBOL EKSPOR/IMPOR) =====================
+// ===================== DASHBOARD =====================
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
 
@@ -485,9 +477,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: _accounts.isEmpty
                     ? Center(
                         child: Text(
-                          _searchQuery.isEmpty
-                              ? 'Belum ada akun yang disimpan'
-                              : 'Tidak ada akun yang cocok',
+                          _searchQuery.isEmpty ? 'Belum ada akun yang disimpan' : 'Tidak ada akun yang cocok',
                           style: const TextStyle(color: Colors.black38, fontWeight: FontWeight.w500),
                         ),
                       )
@@ -534,9 +524,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
       decoration: BoxDecoration(
         color: Colors.white,
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: Column(
         children: [
@@ -562,15 +550,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'AccountManager',
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5),
-                    ),
+                    const Text('AccountManager',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.black87, letterSpacing: -0.5)),
                     const SizedBox(height: 2),
-                    Text(
-                      '${_accounts.length} Akun tersimpan',
-                      style: TextStyle(color: themeColor, fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
+                    Text('${_accounts.length} Akun tersimpan',
+                        style: TextStyle(color: themeColor, fontWeight: FontWeight.bold, fontSize: 12)),
                   ],
                 ),
               ),
@@ -710,10 +694,7 @@ class SettingsScreen extends StatelessWidget {
         title: const Text('Pengaturan Tema', style: TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87, size: 20), onPressed: () => Navigator.pop(context)),
       ),
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
@@ -723,7 +704,6 @@ class SettingsScreen extends StatelessWidget {
           final t = themes[index];
           final Color tColor = t['color'];
           final bool isSelected = ThemeManager.appColor.value.value == tColor.value;
-
           return ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             leading: CircleAvatar(backgroundColor: tColor, radius: 18),
@@ -787,15 +767,9 @@ class _AccountCardState extends State<AccountCard> {
   Widget _buildPlatformIcon(String? iconPath, String name, double size) {
     if (iconPath != null && iconPath.isNotEmpty) {
       if (iconPath.startsWith('assets/')) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(size / 4),
-          child: Image.asset(iconPath, width: size, height: size, fit: BoxFit.cover),
-        );
+        return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.asset(iconPath, width: size, height: size, fit: BoxFit.cover));
       } else {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(size / 4),
-          child: Image.file(File(iconPath), width: size, height: size, fit: BoxFit.cover),
-        );
+        return ClipRRect(borderRadius: BorderRadius.circular(size / 4), child: Image.file(File(iconPath), width: size, height: size, fit: BoxFit.cover));
       }
     }
     return Icon(Icons.public, color: Colors.black54, size: size * 0.8);
@@ -810,9 +784,7 @@ class _AccountCardState extends State<AccountCard> {
   Widget build(BuildContext context) {
     final acc = widget.account;
     final List<String> tags = (acc['tags'] ?? '').toString().split(',').where((e) => e.trim().isNotEmpty).toList();
-    final String displayName = (acc['name'] == null || acc['name'].toString().trim().isEmpty)
-        ? 'AKUN'
-        : acc['name'].toString().toUpperCase();
+    final String displayName = (acc['name'] == null || acc['name'].toString().trim().isEmpty) ? 'AKUN' : acc['name'].toString().toUpperCase();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -820,9 +792,7 @@ class _AccountCardState extends State<AccountCard> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black.withOpacity(0.08)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2)),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -834,28 +804,17 @@ class _AccountCardState extends State<AccountCard> {
                 _buildBadge(widget.index.toString(), isOutline: true),
                 if (acc['account_year'] != null && acc['account_year'].toString().isNotEmpty) ...[
                   const SizedBox(width: 8),
-                  _buildBadge(
-                    acc['account_year'],
-                    bgColor: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                    textColor: Theme.of(context).colorScheme.primary,
-                  ),
+                  _buildBadge(acc['account_year'], bgColor: Theme.of(context).colorScheme.primary.withOpacity(0.1), textColor: Theme.of(context).colorScheme.primary),
                 ],
                 const Spacer(),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F9FA),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.black12),
-                  ),
+                  decoration: BoxDecoration(color: const Color(0xFFF8F9FA), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black12)),
                   child: Row(
                     children: [
                       _buildPlatformIcon(acc['custom_icon_path'], displayName, 16),
                       const SizedBox(width: 6),
-                      Text(
-                        displayName,
-                        style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
+                      Text(displayName, style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 )
@@ -870,10 +829,7 @@ class _AccountCardState extends State<AccountCard> {
                 Container(
                   width: 48,
                   height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5),
-                  ),
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5)),
                   clipBehavior: Clip.hardEdge,
                   child: acc['avatar_path'] != null && acc['avatar_path'].toString().isNotEmpty
                       ? Image.file(File(acc['avatar_path']), fit: BoxFit.cover)
@@ -887,10 +843,7 @@ class _AccountCardState extends State<AccountCard> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              acc['identifier'],
-                              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.black87),
-                            ),
+                            child: Text(acc['identifier'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: Colors.black87)),
                           ),
                           IconButton(
                             icon: const Icon(Icons.copy_outlined, size: 18, color: Colors.black54),
@@ -903,30 +856,17 @@ class _AccountCardState extends State<AccountCard> {
                       const SizedBox(height: 4),
                       Container(
                         padding: const EdgeInsets.only(left: 12, right: 4, top: 4, bottom: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F9FA),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.black.withOpacity(0.05)),
-                        ),
+                        decoration: BoxDecoration(color: const Color(0xFFF8F9FA), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.black.withOpacity(0.05))),
                         child: Row(
                           children: [
                             Expanded(
                               child: Text(
                                 _isPasswordVisible ? acc['password'] : '••••••••',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontFamily: 'monospace',
-                                  letterSpacing: _isPasswordVisible ? 0 : 2,
-                                  color: Colors.black87,
-                                ),
+                                style: TextStyle(fontSize: 14, fontFamily: 'monospace', letterSpacing: _isPasswordVisible ? 0 : 2, color: Colors.black87),
                               ),
                             ),
                             IconButton(
-                              icon: Icon(
-                                _isPasswordVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                                size: 18,
-                                color: Colors.black54,
-                              ),
+                              icon: Icon(_isPasswordVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined, size: 18, color: Colors.black54),
                               onPressed: () => setState(() { _isPasswordVisible = !_isPasswordVisible; }),
                               constraints: const BoxConstraints(),
                               padding: const EdgeInsets.all(8),
@@ -946,10 +886,7 @@ class _AccountCardState extends State<AccountCard> {
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Divider(height: 1, color: Colors.black12),
-          ),
+          const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider(height: 1, color: Colors.black12)),
           if ((acc['dob'] != null && acc['dob'].toString().isNotEmpty) || tags.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
@@ -959,19 +896,13 @@ class _AccountCardState extends State<AccountCard> {
                   if (acc['dob'] != null && acc['dob'].toString().isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+                      decoration: BoxDecoration(color: const Color(0xFFEF4444), borderRadius: BorderRadius.circular(20)),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(Icons.cake_outlined, color: Colors.white, size: 14),
                           const SizedBox(width: 6),
-                          Text(
-                            acc['dob'],
-                            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
+                          Text(acc['dob'], style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -984,14 +915,8 @@ class _AccountCardState extends State<AccountCard> {
                         const Icon(Icons.sports_esports_outlined, color: Colors.black45, size: 18),
                         ...tags.map((t) => Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.black12),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            t.trim(),
-                            style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w500),
-                          ),
+                          decoration: BoxDecoration(border: Border.all(color: Colors.black12), borderRadius: BorderRadius.circular(6)),
+                          child: Text(t.trim(), style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w500)),
                         )).toList(),
                       ],
                     )
@@ -1015,15 +940,9 @@ class _AccountCardState extends State<AccountCard> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '2-FACTOR CODE',
-                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black54, letterSpacing: 0.5),
-                          ),
+                          const Text('2-FACTOR CODE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.black54, letterSpacing: 0.5)),
                           const SizedBox(height: 4),
-                          Text(
-                            _getTotp(),
-                            style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFDC2626), letterSpacing: 4),
-                          ),
+                          Text(_getTotp(), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFFDC2626), letterSpacing: 4)),
                           const SizedBox(height: 8),
                           ClipRRect(
                             borderRadius: BorderRadius.circular(2),
@@ -1062,20 +981,14 @@ class _AccountCardState extends State<AccountCard> {
                         icon: const Icon(Icons.edit_outlined, size: 18),
                         label: const Text('Edit', style: TextStyle(fontWeight: FontWeight.bold)),
                         onPressed: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => AccountFormScreen(account: acc)),
-                          );
+                          final result = await Navigator.push(context, MaterialPageRoute(builder: (context) => AccountFormScreen(account: acc)));
                           if (result == true) widget.onRefresh();
                         },
                       ),
                     ),
                     const SizedBox(width: 12),
                     Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFE4E6),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      decoration: BoxDecoration(color: const Color(0xFFFFE4E6), borderRadius: BorderRadius.circular(8)),
                       child: IconButton(
                         icon: const Icon(Icons.delete_outline, color: Color(0xFFE11D48)),
                         onPressed: () async {
@@ -1090,14 +1003,8 @@ class _AccountCardState extends State<AccountCard> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Dibuat: ${_formatDate(acc['created_at'])}',
-                      style: const TextStyle(fontSize: 10, color: Colors.black38),
-                    ),
-                    Text(
-                      'Update: ${_formatDate(acc['updated_at'])}',
-                      style: const TextStyle(fontSize: 10, color: Colors.black38),
-                    ),
+                    Text('Dibuat: ${_formatDate(acc['created_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
+                    Text('Update: ${_formatDate(acc['updated_at'])}', style: const TextStyle(fontSize: 10, color: Colors.black38)),
                   ],
                 )
               ],
@@ -1116,10 +1023,7 @@ class _AccountCardState extends State<AccountCard> {
         border: Border.all(color: isOutline ? Colors.black12 : Colors.transparent),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textColor ?? Colors.black54),
-      ),
+      child: Text(text, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: textColor ?? Colors.black54)),
     );
   }
 }
@@ -1196,36 +1100,24 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     String secretKey = _secretKeyController.text.trim().replaceAll(' ', '');
 
     if (identifier.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Username/Email dan Password wajib diisi')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Username/Email dan Password wajib diisi')));
       return;
     }
 
     if (isA2fEnabled) {
       if (secretKey.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal: Secret Key tidak boleh kosong saat A2F aktif!')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal: Secret Key tidak boleh kosong saat A2F aktif!')));
         return;
       }
       try {
-        OTP.generateTOTPCodeString(
-          secretKey,
-          DateTime.now().millisecondsSinceEpoch,
-          algorithm: Algorithm.SHA1,
-          isGoogle: true,
-        );
+        OTP.generateTOTPCodeString(secretKey, DateTime.now().millisecondsSinceEpoch, algorithm: Algorithm.SHA1, isGoogle: true);
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal: Secret Key 2FA tidak valid! Pastikan format benar.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gagal: Secret Key 2FA tidak valid! Pastikan format benar.')));
         return;
       }
     }
 
     final nowIso = DateTime.now().toIso8601String();
-
     final row = {
       'name': name,
       'identifier': identifier,
@@ -1271,28 +1163,15 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.close, color: Colors.black87),
-            onPressed: () => Navigator.pop(context),
-          ),
-          title: Text(
-            isEdit ? 'Edit Akun' : 'Tambah Akun',
-            style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700),
-          ),
+          leading: IconButton(icon: const Icon(Icons.close, color: Colors.black87), onPressed: () => Navigator.pop(context)),
+          title: Text(isEdit ? 'Edit Akun' : 'Tambah Akun', style: const TextStyle(color: Colors.black87, fontSize: 18, fontWeight: FontWeight.w700)),
           centerTitle: true,
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 8.0),
               child: TextButton(
                 onPressed: _saveAccount,
-                child: Text(
-                  'Simpan',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
+                child: Text('Simpan', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold, fontSize: 16)),
               ),
             )
           ],
@@ -1308,9 +1187,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
-                    ],
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
                     border: Border.all(color: Colors.black.withOpacity(0.05)),
                   ),
                   clipBehavior: Clip.hardEdge,
@@ -1328,11 +1205,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                       child: Container(
                         margin: const EdgeInsets.only(right: 12),
                         width: 50,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F9FA),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.black12),
-                        ),
+                        decoration: BoxDecoration(color: const Color(0xFFF8F9FA), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black12)),
                         child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.black54),
                       ),
                     ),
@@ -1344,48 +1217,36 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: selectedIconPath == null
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.black12,
-                            width: selectedIconPath == null ? 2 : 1,
-                          ),
+                          border: Border.all(color: selectedIconPath == null ? Theme.of(context).colorScheme.primary : Colors.black12, width: selectedIconPath == null ? 2 : 1),
                         ),
                         child: const Icon(Icons.public, color: Colors.black54, size: 24),
                       ),
                     ),
-                    ..._builtInIcons.map(
-                      (path) => GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedIconPath = path;
-                            String platformName = path.split('/').last.split('.').first;
-                            if (platformName.toLowerCase() == 'x') {
-                              platformName = 'X (Twitter)';
-                            } else {
-                              platformName = platformName[0].toUpperCase() + platformName.substring(1);
-                            }
-                            _nameController.text = platformName;
-                          });
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.only(right: 12),
-                          padding: const EdgeInsets.all(6),
-                          width: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: selectedIconPath == path
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.black12,
-                              width: selectedIconPath == path ? 2 : 1,
-                            ),
-                          ),
-                          child: Image.asset(path),
+                    ..._builtInIcons.map((path) => GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          selectedIconPath = path;
+                          String platformName = path.split('/').last.split('.').first;
+                          if (platformName.toLowerCase() == 'x') {
+                            platformName = 'X (Twitter)';
+                          } else {
+                            platformName = platformName[0].toUpperCase() + platformName.substring(1);
+                          }
+                          _nameController.text = platformName;
+                        });
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 12),
+                        padding: const EdgeInsets.all(6),
+                        width: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: selectedIconPath == path ? Theme.of(context).colorScheme.primary : Colors.black12, width: selectedIconPath == path ? 2 : 1),
                         ),
+                        child: Image.asset(path),
                       ),
-                    ),
+                    )).toList()
                   ],
                 ),
               ),
@@ -1399,21 +1260,13 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                     child: Container(
                       width: 52,
                       height: 52,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8F9FA),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.black12),
-                      ),
+                      decoration: BoxDecoration(color: const Color(0xFFF8F9FA), shape: BoxShape.circle, border: Border.all(color: Colors.black12)),
                       clipBehavior: Clip.hardEdge,
-                      child: selectedAvatarPath != null
-                          ? Image.file(File(selectedAvatarPath!), fit: BoxFit.cover)
-                          : const Icon(Icons.add_a_photo_outlined, color: Colors.black38, size: 20),
+                      child: selectedAvatarPath != null ? Image.file(File(selectedAvatarPath!), fit: BoxFit.cover) : const Icon(Icons.add_a_photo_outlined, color: Colors.black38, size: 20),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTextField(controller: _identifierController, hint: 'Email atau Username'),
-                  ),
+                  Expanded(child: _buildTextField(controller: _identifierController, hint: 'Email atau Username')),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1430,52 +1283,28 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
                 children: [
                   Expanded(child: _buildTextField(controller: _dobController, hint: 'Tgl Lahir')),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTextField(
-                      controller: _yearController,
-                      hint: 'Tahun Buat',
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
+                  Expanded(child: _buildTextField(controller: _yearController, hint: 'Tahun Buat', keyboardType: TextInputType.number)),
                 ],
               ),
               const SizedBox(height: 16),
-              _buildTextField(
-                controller: _tagsController,
-                hint: 'Kategori / Game (pisahkan koma)',
-                icon: Icons.sports_esports_outlined,
-              ),
+              _buildTextField(controller: _tagsController, hint: 'Kategori / Game (pisahkan koma)', icon: Icons.sports_esports_outlined),
               const SizedBox(height: 24),
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.black.withOpacity(0.05)),
-                ),
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.05))),
                 child: Column(
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Aktifkan 2-Factor Code',
-                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-                        ),
-                        Switch(
-                          value: isA2fEnabled,
-                          activeColor: Theme.of(context).colorScheme.primary,
-                          onChanged: (val) => setState(() { isA2fEnabled = val; }),
-                        ),
+                        const Text('Aktifkan 2-Factor Code', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                        Switch(value: isA2fEnabled, activeColor: Theme.of(context).colorScheme.primary, onChanged: (val) => setState(() { isA2fEnabled = val; })),
                       ],
                     ),
                     if (isA2fEnabled) ...[
                       const Divider(height: 24),
-                      _buildTextField(
-                        controller: _secretKeyController,
-                        hint: 'Masukkan Secret Key Base32',
-                      ),
-                    ],
+                      _buildTextField(controller: _secretKeyController, hint: 'Masukkan Secret Key Base32'),
+                    ]
                   ],
                 ),
               ),
@@ -1483,17 +1312,9 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
+                  style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                   onPressed: _saveAccount,
-                  child: Text(
-                    isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
+                  child: Text(isEdit ? 'Simpan Perubahan' : 'Simpan Akun Baru', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -1503,21 +1324,9 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hint,
-    IconData? icon,
-    bool isPassword = false,
-    bool isVisible = false,
-    VoidCallback? onVisibilityToggle,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
+  Widget _buildTextField({required TextEditingController controller, required String hint, IconData? icon, bool isPassword = false, bool isVisible = false, VoidCallback? onVisibilityToggle, TextInputType keyboardType = TextInputType.text}) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.black.withOpacity(0.1)),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.black.withOpacity(0.1))),
       child: TextField(
         controller: controller,
         obscureText: isPassword && !isVisible,
@@ -1529,16 +1338,7 @@ class _AccountFormScreenState extends State<AccountFormScreen> {
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           prefixIcon: icon != null ? Icon(icon, color: Colors.black38, size: 20) : null,
-          suffixIcon: isPassword
-              ? IconButton(
-                  icon: Icon(
-                    isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                    color: Colors.black38,
-                    size: 20,
-                  ),
-                  onPressed: onVisibilityToggle,
-                )
-              : null,
+          suffixIcon: isPassword ? IconButton(icon: Icon(isVisible ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: Colors.black38, size: 20), onPressed: onVisibilityToggle) : null,
         ),
       ),
     );
