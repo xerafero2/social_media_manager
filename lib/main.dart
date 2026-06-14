@@ -1,10 +1,8 @@
-import 'dart:ui';
 import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import 'package:otp/otp.dart';
@@ -18,7 +16,7 @@ import 'package:encrypt/encrypt.dart' as enc;
 
 // ===================== ENCRYPTION HELPER =====================
 class EncryptionHelper {
-  static final _key = enc.Key.fromUtf8('my16charsecret!!'); // 16/24/32 karakter
+  static final _key = enc.Key.fromUtf8('my16charsecret!!');
   static final _iv = enc.IV.fromLength(16);
   static final encrypter = enc.Encrypter(enc.AES(_key));
 
@@ -160,7 +158,6 @@ class ExportImportScreen extends StatefulWidget {
 class _ExportImportScreenState extends State<ExportImportScreen> {
   String? _encryptedString;
 
-  // === KONVERSI ===
   Future<String> _accountsToJsonString() async {
     final accounts = await DatabaseHelper.instance.getAllAccounts();
     return jsonEncode(accounts.map((e) => Map<String, dynamic>.from(e)).toList());
@@ -221,7 +218,6 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
     return buffer.toString();
   }
 
-  // === EKSPOR ===
   Future<void> _exportFile(String extension, String content) async {
     if (content.isEmpty) {
       _showSnack('Tidak ada data untuk diekspor');
@@ -261,7 +257,6 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
     _showSnack('String terenkripsi disalin ke clipboard');
   }
 
-  // === IMPOR ===
   Future<void> _importFromFile(String extension) async {
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -307,7 +302,6 @@ class _ExportImportScreenState extends State<ExportImportScreen> {
     }
   }
 
-  // === UI ===
   void _showSnack(String msg) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -558,7 +552,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
               ),
-              // Tombol Ekspor/Impor
               IconButton(
                 icon: const Icon(Icons.import_export, color: Colors.black87),
                 tooltip: 'Ekspor & Impor',
@@ -568,7 +561,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
               const SizedBox(width: 4),
-              // Tombol Tema
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8F9FA),
